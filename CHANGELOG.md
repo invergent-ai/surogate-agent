@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/invergent-ai/surogate-agent/compare/v0.1.0...v0.1.1) (2026-02-23)
+
+
+### Bug Fixes
+
+* respect SUROGATE_*_DIR env vars in CLI and AgentConfig defaults ([1acd552](https://github.com/invergent-ai/surogate-agent/commit/1acd552d1c03b18daa4688bd4c32d4eb747daaeb))
+
 ## 0.1.0 (2026-02-23)
 
 
