@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.2](https://github.com/invergent-ai/surogate-agent/compare/v0.1.1...v0.1.2) (2026-02-23)
+
+
+### Bug Fixes
+
+* anchor runtime data dir patterns in .dockerignore to root ([33c86e0](https://github.com/invergent-ai/surogate-agent/commit/33c86e0bc9c3a9d01e16c9b175c926c456644dbd))
+* restore missing builtin skill ([e45ad1c](https://github.com/invergent-ai/surogate-agent/commit/e45ad1cef939a4a231bb295f561d8fd5eec126e9))
+
 ## [0.1.1](https://github.com/invergent-ai/surogate-agent/compare/v0.1.0...v0.1.1) (2026-02-23)
 
 
