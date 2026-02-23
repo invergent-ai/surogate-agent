@@ -81,7 +81,7 @@ Skills are directories containing a `SKILL.md` with YAML frontmatter (`name`, `d
 | `src/surogate_agent/core/session.py` | `Session`, `SessionManager` |
 | `src/surogate_agent/skills/loader.py` | `SkillLoader`, `SkillInfo`, `_normalize_skill_md` |
 | `src/surogate_agent/skills/registry.py` | `SkillRegistry` |
-| `src/surogate_agent/skills/builtin/` | Built-in skills (currently: `meta/` — the skill-developer meta-skill) |
+| `src/surogate_agent/skills/builtin/skill-developer/` | Built-in skills (currently: `skill-developer/` — the skill-developer meta-skill) |
 | `src/surogate_agent/middleware/role_guard.py` | `RoleGuardAgent` wrapper |
 | `src/surogate_agent/cli/main.py` | Typer CLI entry point (`surogate-agent` command) |
 
