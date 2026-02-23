@@ -127,7 +127,7 @@ def chat(
         raise typer.Exit(1)
 
     resolved_model = model or os.environ.get("SUROGATE_MODEL", "claude-sonnet-4-6")
-    resolved_skills_dir = skills_dir or Path.cwd() / "skills"
+    resolved_skills_dir = skills_dir or Path(os.environ.get("SUROGATE_SKILLS_DIR", "") or Path.cwd() / "skills")
     resolved_skills_dir.mkdir(parents=True, exist_ok=True)
 
     cfg_kwargs: dict = dict(

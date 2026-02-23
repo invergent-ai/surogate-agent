@@ -52,8 +52,8 @@ class AgentConfig:
     user_skills_dir: Path = field(default_factory=lambda: Path.cwd() / "skills")
     # Developer's persistent scratch area — separate from skill definition files.
     # Survives across development sessions; never mixed into skill directories.
-    dev_workspace_dir: Path = field(default_factory=lambda: Path.cwd() / "workspace")
-    sessions_dir: Path = field(default_factory=lambda: Path.cwd() / "sessions")
+    dev_workspace_dir: Path = field(default_factory=lambda: Path(os.environ.get("SUROGATE_WORKSPACE_DIR", "") or Path.cwd() / "workspace"))
+    sessions_dir: Path = field(default_factory=lambda: Path(os.environ.get("SUROGATE_SESSIONS_DIR", "") or Path.cwd() / "sessions"))
     extra_tools: list = field(default_factory=list)
     max_iterations: int = 50
     system_prompt_suffix: str = ""
