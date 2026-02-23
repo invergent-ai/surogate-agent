@@ -15,6 +15,8 @@
   ·
   <a href="docs/api.md"><strong>API Reference</strong></a>
   ·
+  <a href="https://github.com/invergent-ai/surogate"><strong>Surogate</strong></a>
+  ·
   <a href="https://github.com/invergent-ai/surogate-studio"><strong>Surogate Studio</strong></a>
 </p>
 
