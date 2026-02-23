@@ -40,9 +40,9 @@ docs/
 assets/
 
 # Runtime data dirs (should be bind-mounted)
-skills/
-sessions/
-workspace/
+/skills/
+/sessions/
+/workspace/
 
 # Secrets
 .env
