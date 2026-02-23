@@ -20,7 +20,7 @@ COPY src/ src/
 # --frozen  → respect uv.lock exactly
 # --no-dev  → skip dev-only tools (pytest, ruff, mypy)
 # --python  → pin to the same Python the runtime will use
-RUN uv sync --frozen --no-dev --extra anthropic --extra api --python /usr/bin/python3.12
+RUN uv sync --frozen --no-dev --extra anthropic --extra openai --extra api --python /usr/bin/python3.12
 
 
 # ─── Stage 2: runtime image ───────────────────────────────────────────────────
