@@ -2,6 +2,15 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Repository layout
+
+```
+src/surogate_agent/   Python package — agent, CLI, REST API
+src/frontend/         Frontend extension — see src/frontend/CLAUDE.md
+tests/                Test suite for the Python package (109 tests, all mocked)
+docs/                 CLI and API reference docs
+```
+
 ## Commands
 
 ```bash
