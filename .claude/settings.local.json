@@ -17,7 +17,16 @@
       "Bash(.venv/bin/python:*)",
       "Bash(tail:*)",
       "Bash(git:*)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(node --version && npm --version 2>&1)",
+      "Bash(npx:*)",
+      "Bash(ls:*)",
+      "Bash(cd /work/Product/Surogate/agent/src/frontend && ng build --configuration development 2>&1)",
+      "Bash(uv sync:*)",
+      "Bash(node:*)",
+      "Bash(grep:*)",
+      "Bash(SUROGATE_STATIC_DIR=\"src/frontend/dist/surogate-frontend/browser\" .venv/bin/python:*)",
+      "Bash(grep ^Version::*)"
     ]
   }
 }

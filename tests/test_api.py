@@ -47,10 +47,19 @@ def settings(tmp_dirs):
 
 @pytest.fixture()
 def client(settings):
+    from unittest.mock import MagicMock
+    from surogate_agent.auth.jwt import get_current_user
+
+    mock_user = MagicMock()
+    mock_user.username = "testuser"
+    mock_user.role = "developer"
+    mock_user.is_active = True
+
     app = create_app()
     app.dependency_overrides[
         __import__("surogate_agent.api.deps", fromlist=["settings_dep"]).settings_dep
     ] = lambda: settings
+    app.dependency_overrides[get_current_user] = lambda: mock_user
     get_settings.cache_clear()
     return TestClient(app)
 
@@ -76,7 +85,7 @@ def _make_skill(skills_dir: Path, name: str, *, role_restriction: str | None = N
 
 class TestSkillsList:
     def test_list_empty(self, client):
-        resp = client.get("/skills")
+        resp = client.get("/api/skills")
         assert resp.status_code == 200
         # Only builtins (meta skill) may appear
         body = resp.json()
@@ -84,7 +93,7 @@ class TestSkillsList:
 
     def test_list_user_skill(self, client, settings):
         _make_skill(settings.skills_dir, "my-skill")
-        resp = client.get("/skills")
+        resp = client.get("/api/skills")
         assert resp.status_code == 200
         names = [s["name"] for s in resp.json()]
         assert "my-skill" in names
@@ -92,7 +101,7 @@ class TestSkillsList:
     def test_list_filter_user_role(self, client, settings):
         _make_skill(settings.skills_dir, "open-skill")
         _make_skill(settings.skills_dir, "dev-only", role_restriction="developer")
-        resp = client.get("/skills?role=user")
+        resp = client.get("/api/skills?role=user")
         assert resp.status_code == 200
         names = [s["name"] for s in resp.json()]
         assert "open-skill" in names
@@ -101,7 +110,7 @@ class TestSkillsList:
     def test_list_filter_developer_role(self, client, settings):
         _make_skill(settings.skills_dir, "open-skill")
         _make_skill(settings.skills_dir, "dev-only", role_restriction="developer")
-        resp = client.get("/skills?role=developer")
+        resp = client.get("/api/skills?role=developer")
         assert resp.status_code == 200
         names = [s["name"] for s in resp.json()]
         assert "open-skill" in names
@@ -116,7 +125,7 @@ class TestSkillsList:
 class TestSkillsGet:
     def test_get_existing(self, client, settings):
         _make_skill(settings.skills_dir, "my-skill")
-        resp = client.get("/skills/my-skill")
+        resp = client.get("/api/skills/my-skill")
         assert resp.status_code == 200
         body = resp.json()
         assert body["name"] == "my-skill"
@@ -124,7 +133,7 @@ class TestSkillsGet:
         assert "helper_files" in body
 
     def test_get_missing(self, client):
-        resp = client.get("/skills/nonexistent")
+        resp = client.get("/api/skills/nonexistent")
         assert resp.status_code == 404
 
 
@@ -140,7 +149,7 @@ class TestSkillsCreate:
             "description": "A brand new skill",
             "version": "1.0.0",
         }
-        resp = client.post("/skills", json=payload)
+        resp = client.post("/api/skills", json=payload)
         assert resp.status_code == 201
         body = resp.json()
         assert body["name"] == "new-skill"
@@ -152,7 +161,7 @@ class TestSkillsCreate:
             "description": "Has body",
             "skill_md_body": "# Instructions\nDo something useful.",
         }
-        resp = client.post("/skills", json=payload)
+        resp = client.post("/api/skills", json=payload)
         assert resp.status_code == 201
         content = (settings.skills_dir / "with-body" / "SKILL.md").read_text()
         assert "Do something useful" in content
@@ -160,7 +169,7 @@ class TestSkillsCreate:
     def test_create_conflict(self, client, settings):
         _make_skill(settings.skills_dir, "existing")
         payload = {"name": "existing", "description": "dup"}
-        resp = client.post("/skills", json=payload)
+        resp = client.post("/api/skills", json=payload)
         assert resp.status_code == 409
 
     def test_create_with_role_restriction(self, client, settings):
@@ -169,7 +178,7 @@ class TestSkillsCreate:
             "description": "Developer only",
             "role_restriction": "developer",
         }
-        resp = client.post("/skills", json=payload)
+        resp = client.post("/api/skills", json=payload)
         assert resp.status_code == 201
         content = (settings.skills_dir / "dev-skill" / "SKILL.md").read_text()
         assert "role-restriction: developer" in content
@@ -183,17 +192,17 @@ class TestSkillsCreate:
 class TestSkillsDelete:
     def test_delete_user_skill(self, client, settings):
         _make_skill(settings.skills_dir, "deletable")
-        resp = client.delete("/skills/deletable")
+        resp = client.delete("/api/skills/deletable")
         assert resp.status_code == 200
         assert not (settings.skills_dir / "deletable").exists()
 
     def test_delete_missing(self, client):
-        resp = client.delete("/skills/ghost")
+        resp = client.delete("/api/skills/ghost")
         assert resp.status_code == 404
 
     def test_delete_builtin_refused(self, client):
         # skill-developer is the builtin meta skill — cannot be deleted
-        resp = client.delete("/skills/skill-developer")
+        resp = client.delete("/api/skills/skill-developer")
         assert resp.status_code == 403
 
 
@@ -205,14 +214,14 @@ class TestSkillsDelete:
 class TestSkillsValidate:
     def test_validate_valid_skill(self, client, settings):
         _make_skill(settings.skills_dir, "valid-skill")
-        resp = client.post("/skills/valid-skill/validate")
+        resp = client.post("/api/skills/valid-skill/validate")
         assert resp.status_code == 200
         body = resp.json()
         assert body["valid"] is True
         assert body["errors"] == []
 
     def test_validate_missing_skill(self, client):
-        resp = client.post("/skills/no-such/validate")
+        resp = client.post("/api/skills/no-such/validate")
         assert resp.status_code == 200
         body = resp.json()
         assert body["valid"] is False
@@ -227,7 +236,7 @@ class TestSkillsValidate:
 class TestSkillHelperFiles:
     def test_list_helper_files_empty(self, client, settings):
         _make_skill(settings.skills_dir, "no-helpers")
-        resp = client.get("/skills/no-helpers/files")
+        resp = client.get("/api/skills/no-helpers/files")
         assert resp.status_code == 200
         assert resp.json() == []
 
@@ -235,12 +244,12 @@ class TestSkillHelperFiles:
         _make_skill(settings.skills_dir, "with-helpers")
         file_data = b"helper content"
         resp = client.post(
-            "/skills/with-helpers/files/helper.txt",
+            "/api/skills/with-helpers/files/helper.txt",
             files={"upload": ("helper.txt", io.BytesIO(file_data), "text/plain")},
         )
         assert resp.status_code == 201
 
-        resp = client.get("/skills/with-helpers/files")
+        resp = client.get("/api/skills/with-helpers/files")
         assert resp.status_code == 200
         names = [f["name"] for f in resp.json()]
         assert "helper.txt" in names
@@ -248,32 +257,32 @@ class TestSkillHelperFiles:
     def test_download_helper(self, client, settings):
         d = _make_skill(settings.skills_dir, "with-download")
         (d / "data.txt").write_text("hello")
-        resp = client.get("/skills/with-download/files/data.txt")
+        resp = client.get("/api/skills/with-download/files/data.txt")
         assert resp.status_code == 200
         assert resp.content == b"hello"
 
     def test_download_missing(self, client, settings):
         _make_skill(settings.skills_dir, "no-file")
-        resp = client.get("/skills/no-file/files/nope.txt")
+        resp = client.get("/api/skills/no-file/files/nope.txt")
         assert resp.status_code == 404
 
     def test_delete_helper(self, client, settings):
         d = _make_skill(settings.skills_dir, "del-helper")
         (d / "remove.txt").write_text("bye")
-        resp = client.delete("/skills/del-helper/files/remove.txt")
+        resp = client.delete("/api/skills/del-helper/files/remove.txt")
         assert resp.status_code == 200
         assert not (d / "remove.txt").exists()
 
     def test_delete_skill_md_refused(self, client, settings):
         _make_skill(settings.skills_dir, "protected")
-        resp = client.delete("/skills/protected/files/SKILL.md")
+        resp = client.delete("/api/skills/protected/files/SKILL.md")
         assert resp.status_code == 403
 
     def test_upload_conflict_without_force(self, client, settings):
         d = _make_skill(settings.skills_dir, "conflict")
         (d / "existing.txt").write_text("old")
         resp = client.post(
-            "/skills/conflict/files/existing.txt",
+            "/api/skills/conflict/files/existing.txt",
             files={"upload": ("existing.txt", io.BytesIO(b"new"), "text/plain")},
         )
         assert resp.status_code == 409
@@ -282,7 +291,7 @@ class TestSkillHelperFiles:
         d = _make_skill(settings.skills_dir, "force-overwrite")
         (d / "existing.txt").write_text("old")
         resp = client.post(
-            "/skills/force-overwrite/files/existing.txt?force=true",
+            "/api/skills/force-overwrite/files/existing.txt?force=true",
             files={"upload": ("existing.txt", io.BytesIO(b"new"), "text/plain")},
         )
         assert resp.status_code == 201
@@ -301,14 +310,14 @@ class TestSessions:
         return ws
 
     def test_list_sessions_empty(self, client):
-        resp = client.get("/sessions")
+        resp = client.get("/api/sessions")
         assert resp.status_code == 200
         assert resp.json() == []
 
     def test_list_sessions(self, client, settings):
         self._make_session(settings, "s1")
         self._make_session(settings, "s2")
-        resp = client.get("/sessions")
+        resp = client.get("/api/sessions")
         assert resp.status_code == 200
         ids = [s["session_id"] for s in resp.json()]
         assert "s1" in ids
@@ -316,55 +325,55 @@ class TestSessions:
 
     def test_get_session(self, client, settings):
         self._make_session(settings, "my-session")
-        resp = client.get("/sessions/my-session")
+        resp = client.get("/api/sessions/my-session")
         assert resp.status_code == 200
         assert resp.json()["session_id"] == "my-session"
 
     def test_get_session_missing(self, client):
-        resp = client.get("/sessions/ghost")
+        resp = client.get("/api/sessions/ghost")
         assert resp.status_code == 404
 
     def test_delete_session(self, client, settings):
         self._make_session(settings, "delete-me")
-        resp = client.delete("/sessions/delete-me")
+        resp = client.delete("/api/sessions/delete-me")
         assert resp.status_code == 200
         assert not (settings.sessions_dir / "delete-me").exists()
 
     def test_delete_session_missing(self, client):
-        resp = client.delete("/sessions/no-such")
+        resp = client.delete("/api/sessions/no-such")
         assert resp.status_code == 404
 
     def test_session_file_upload_download_delete(self, client, settings):
         self._make_session(settings, "file-session")
         # Upload
         resp = client.post(
-            "/sessions/file-session/files",
+            "/api/sessions/file-session/files",
             files={"upload": ("data.csv", io.BytesIO(b"a,b\n1,2"), "text/csv")},
         )
         assert resp.status_code == 201
         # List
-        resp = client.get("/sessions/file-session/files")
+        resp = client.get("/api/sessions/file-session/files")
         assert resp.status_code == 200
         names = [f["name"] for f in resp.json()]
         assert "data.csv" in names
         # Download
-        resp = client.get("/sessions/file-session/files/data.csv")
+        resp = client.get("/api/sessions/file-session/files/data.csv")
         assert resp.status_code == 200
         assert b"a,b" in resp.content
         # Delete
-        resp = client.delete("/sessions/file-session/files/data.csv")
+        resp = client.delete("/api/sessions/file-session/files/data.csv")
         assert resp.status_code == 200
         assert not (settings.sessions_dir / "file-session" / "data.csv").exists()
 
     def test_session_file_download_missing(self, client, settings):
         self._make_session(settings, "empty-session")
-        resp = client.get("/sessions/empty-session/files/nope.txt")
+        resp = client.get("/api/sessions/empty-session/files/nope.txt")
         assert resp.status_code == 404
 
     def test_session_upload_creates_session(self, client, settings):
         # Upload to a session that doesn't exist yet
         resp = client.post(
-            "/sessions/brand-new/files",
+            "/api/sessions/brand-new/files",
             files={"upload": ("hello.txt", io.BytesIO(b"hi"), "text/plain")},
         )
         assert resp.status_code == 201
@@ -383,14 +392,14 @@ class TestWorkspace:
         return ws
 
     def test_list_workspaces_empty(self, client):
-        resp = client.get("/workspace")
+        resp = client.get("/api/workspace")
         assert resp.status_code == 200
         assert resp.json() == []
 
     def test_list_workspaces(self, client, settings):
         self._make_workspace(settings, "skill-a")
         self._make_workspace(settings, "skill-b")
-        resp = client.get("/workspace")
+        resp = client.get("/api/workspace")
         assert resp.status_code == 200
         skills = [w["skill"] for w in resp.json()]
         assert "skill-a" in skills
@@ -398,17 +407,17 @@ class TestWorkspace:
 
     def test_get_workspace(self, client, settings):
         self._make_workspace(settings, "alpha")
-        resp = client.get("/workspace/alpha")
+        resp = client.get("/api/workspace/alpha")
         assert resp.status_code == 200
         assert resp.json()["skill"] == "alpha"
 
     def test_get_workspace_missing(self, client):
-        resp = client.get("/workspace/no-such")
+        resp = client.get("/api/workspace/no-such")
         assert resp.status_code == 404
 
     def test_delete_workspace(self, client, settings):
         self._make_workspace(settings, "remove-me")
-        resp = client.delete("/workspace/remove-me")
+        resp = client.delete("/api/workspace/remove-me")
         assert resp.status_code == 200
         assert not (settings.workspace_dir / "remove-me").exists()
 
@@ -416,33 +425,33 @@ class TestWorkspace:
         self._make_workspace(settings, "ws-skill")
         # Upload
         resp = client.post(
-            "/workspace/ws-skill/files",
+            "/api/workspace/ws-skill/files",
             files={"upload": ("notes.txt", io.BytesIO(b"my notes"), "text/plain")},
         )
         assert resp.status_code == 201
         # List
-        resp = client.get("/workspace/ws-skill/files")
+        resp = client.get("/api/workspace/ws-skill/files")
         assert resp.status_code == 200
         names = [f["name"] for f in resp.json()]
         assert "notes.txt" in names
         # Download
-        resp = client.get("/workspace/ws-skill/files/notes.txt")
+        resp = client.get("/api/workspace/ws-skill/files/notes.txt")
         assert resp.status_code == 200
         assert resp.content == b"my notes"
         # Delete
-        resp = client.delete("/workspace/ws-skill/files/notes.txt")
+        resp = client.delete("/api/workspace/ws-skill/files/notes.txt")
         assert resp.status_code == 200
         assert not (settings.workspace_dir / "ws-skill" / "notes.txt").exists()
 
     def test_workspace_file_download_missing(self, client, settings):
         self._make_workspace(settings, "empty-ws")
-        resp = client.get("/workspace/empty-ws/files/nope.txt")
+        resp = client.get("/api/workspace/empty-ws/files/nope.txt")
         assert resp.status_code == 404
 
     def test_workspace_upload_creates_dir(self, client, settings):
         # Upload to workspace that does not exist yet
         resp = client.post(
-            "/workspace/brand-new-skill/files",
+            "/api/workspace/brand-new-skill/files",
             files={"upload": ("draft.md", io.BytesIO(b"# Draft"), "text/markdown")},
         )
         assert resp.status_code == 201
@@ -485,7 +494,7 @@ class TestChat:
         mock_create_agent.return_value = mock_agent
 
         resp = client.post(
-            "/chat",
+            "/api/chat",
             json={"message": "Hello", "role": "user"},
             headers={"Accept": "text/event-stream"},
         )
@@ -500,7 +509,7 @@ class TestChat:
         mock_create_agent.return_value = mock_agent
 
         resp = client.post(
-            "/chat",
+            "/api/chat",
             json={"message": "Hello", "role": "user"},
         )
         assert resp.status_code == 200
@@ -509,13 +518,14 @@ class TestChat:
         assert "done" in body
 
     @patch("surogate_agent.api.routers.chat.create_agent")
-    def test_chat_invalid_role(self, mock_create_agent, client):
+    def test_chat_role_from_jwt_overrides_body(self, mock_create_agent, client):
+        # Role is always taken from the authenticated user (JWT), so any value
+        # in the request body is silently replaced — no error is returned.
         mock_create_agent.return_value = self._mock_agent()
-        resp = client.post("/chat", json={"message": "Hi", "role": "superuser"})
+        resp = client.post("/api/chat", json={"message": "Hi", "role": "superuser"})
         assert resp.status_code == 200
         body = resp.text
-        assert "error" in body
-        assert "superuser" in body
+        assert "done" in body  # request succeeds; mock user's role ("developer") is used
 
     @patch("surogate_agent.api.routers.chat.create_agent")
     def test_chat_developer_role(self, mock_create_agent, client, settings):
@@ -523,7 +533,7 @@ class TestChat:
         mock_create_agent.return_value = mock_agent
 
         resp = client.post(
-            "/chat",
+            "/api/chat",
             json={"message": "Create a skill", "role": "developer", "skill": "my-skill"},
         )
         assert resp.status_code == 200
@@ -555,7 +565,7 @@ class TestChat:
         mock.session.files = []
         mock_create_agent.return_value = mock
 
-        resp = client.post("/chat", json={"message": "Think!", "role": "user"})
+        resp = client.post("/api/chat", json={"message": "Think!", "role": "user"})
         assert resp.status_code == 200
         assert "thinking" in resp.text
 
@@ -588,6 +598,6 @@ class TestChat:
         mock.session.files = []
         mock_create_agent.return_value = mock
 
-        resp = client.post("/chat", json={"message": "Write a file", "role": "developer"})
+        resp = client.post("/api/chat", json={"message": "Write a file", "role": "developer"})
         assert resp.status_code == 200
         assert "tool_call" in resp.text

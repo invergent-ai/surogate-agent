@@ -1,0 +1,62 @@
+<div class="flex flex-col gap-2">
+  <div class="flex items-center justify-between">
+    <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider">{{ title }}</h3>
+    @if (allowUpload) {
+      <button
+        (click)="fileInputRef.nativeElement.click()"
+        class="text-xs text-indigo-600 hover:text-indigo-800 transition-colors"
+        [disabled]="uploading()"
+      >
+        {{ uploading() ? 'Uploading…' : '+ Upload' }}
+      </button>
+      <input #fileInput type="file" class="hidden" (change)="onFileSelected($event)" />
+    }
+  </div>
+
+  <!-- Drop zone -->
+  @if (allowUpload) {
+    <div
+      class="border-2 border-dashed rounded-lg p-3 text-center text-xs text-gray-400 transition-colors cursor-pointer"
+      [class.border-indigo-400]="dragging()"
+      [class.border-gray-200]="!dragging()"
+      [class.bg-indigo-50]="dragging()"
+      (dragover)="onDragOver($event)"
+      (dragleave)="onDragLeave()"
+      (drop)="onDrop($event)"
+      (click)="fileInputRef.nativeElement.click()"
+    >
+      Drop file here or click to upload
+    </div>
+  }
+
+  <!-- File list -->
+  @if (files.length === 0) {
+    <p class="text-xs text-gray-400 italic px-1">{{ emptyMessage }}</p>
+  } @else {
+    <ul class="space-y-1">
+      @for (file of files; track file.name) {
+        <li class="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-gray-50 group">
+          <span class="flex-1 text-sm text-gray-700 truncate" [title]="file.name">{{ file.name }}</span>
+          <span class="text-xs text-gray-400 flex-none">{{ formatBytes(file.size_bytes) }}</span>
+          @if (downloadFn) {
+            <button
+              (click)="download(file.name)"
+              class="text-gray-400 hover:text-indigo-600 opacity-0 group-hover:opacity-100 transition-all text-sm"
+              title="Download"
+            >↓</button>
+          }
+          @if (allowDelete && deleteFn) {
+            <button
+              (click)="delete(file.name)"
+              [disabled]="deleting() === file.name"
+              class="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all text-sm"
+              title="Delete"
+            >
+              {{ deleting() === file.name ? '…' : '×' }}
+            </button>
+          }
+        </li>
+      }
+    </ul>
+  }
+</div>

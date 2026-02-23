@@ -25,8 +25,8 @@ cd surogate-agent
 ### With uv (recommended)
 
 ```bash
-# Install all extras: Claude models + OpenAI models + API server + dev tools
-uv sync --extra anthropic --extra openai --extra api --extra dev
+# Install all extras: Claude models + OpenAI models + API server + auth + dev tools
+uv sync --extra anthropic --extra openai --extra api --extra auth --extra dev
 
 # Activate the venv
 source .venv/bin/activate
@@ -36,7 +36,7 @@ source .venv/bin/activate
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
-pip install -e ".[anthropic,openai,api,dev]"
+pip install -e ".[anthropic,openai,api,auth,dev]"
 ```
 
 ---
@@ -53,6 +53,13 @@ export SUROGATE_MODEL=claude-sonnet-4-6
 export SUROGATE_SKILLS_DIR=./skills
 export SUROGATE_SESSIONS_DIR=./sessions
 export SUROGATE_WORKSPACE_DIR=./workspace
+
+# Auth (required when running with [auth] extra)
+export SUROGATE_JWT_SECRET=dev-secret-change-in-prod
+# SQLite default (local dev): sqlite:///./surogate.db  (file created in CWD)
+# Docker default:             sqlite:////data/surogate.db  (set in Dockerfile ENV)
+# export SUROGATE_DATABASE_URL=postgresql://user:pass@db:5432/surogate  # prod PostgreSQL
+# export SUROGATE_ACCESS_TOKEN_EXPIRE_MINUTES=480
 ```
 
 ---
@@ -86,9 +93,25 @@ surogate-agent serve --reload
 ```
 
 Once running:
+- Web UI: http://localhost:8000
 - API docs (Swagger UI): http://localhost:8000/docs
 - ReDoc: http://localhost:8000/redoc
-- Health check: `curl http://localhost:8000/`
+
+### Frontend (Angular)
+
+The Angular UI lives in `src/frontend/`. It is served by FastAPI at `/` in production, but during development you run it separately with a proxy:
+
+```bash
+cd src/frontend
+npm install
+ng serve       # http://localhost:4200 — proxies /api/* to localhost:8000
+```
+
+Build for production (output is bundled into `dist/surogate-frontend/browser/` which the Dockerfile copies to `/app/static`):
+
+```bash
+ng build --configuration production
+```
 
 ---
 
@@ -135,10 +158,11 @@ mypy src/
 docker build -t surogate-agent .
 ```
 
-The Dockerfile is a two-stage build:
+The Dockerfile is a three-stage build:
 
-1. **builder** — installs all Python dependencies with `uv` into `.venv`
-2. **runtime** — `ubuntu:24.04` with Python 3.12 installed; only the venv and source are copied across; runs as root
+1. **frontend-builder** — runs `ng build` inside a Node.js image; output lands in `dist/surogate-frontend/browser/`
+2. **builder** — installs all Python dependencies with `uv` into `.venv`
+3. **runtime** — `ubuntu:24.04` with Python 3.12; copies the venv, source, and built frontend; runs as root
 
 ### Run the container
 
@@ -146,14 +170,15 @@ The Dockerfile is a two-stage build:
 docker run --rm \
   -e ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY \
   -e SUROGATE_MODEL=claude-sonnet-4-6 \
+  -e SUROGATE_JWT_SECRET=change-me-in-production \
   -p 8000:8000 \
-  -v $(pwd)/skills:/data/skills \
-  -v $(pwd)/sessions:/data/sessions \
-  -v $(pwd)/workspace:/data/workspace \
+  -v $(pwd)/data:/data \
   surogate-agent
 ```
 
-### Run with Docker Compose
+This mounts a local `./data` directory to `/data` in the container, persisting skills, sessions, workspace files, and the SQLite database (`data/surogate.db`).
+
+### Run with Docker Compose (SQLite, dev)
 
 Create a `docker-compose.yml` in your project:
 
@@ -166,11 +191,45 @@ services:
     environment:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       SUROGATE_MODEL: claude-sonnet-4-6
+      SUROGATE_JWT_SECRET: ${JWT_SECRET:-change-me}
     volumes:
       - ./skills:/data/skills
       - ./sessions:/data/sessions
       - ./workspace:/data/workspace
     restart: unless-stopped
+```
+
+### Run with Docker Compose (PostgreSQL, prod)
+
+```yaml
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: surogate
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: surogate
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  surogate-agent:
+    image: ghcr.io/invergent-ai/surogate-agent:latest
+    ports:
+      - "8000:8000"
+    environment:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      SUROGATE_MODEL: claude-sonnet-4-6
+      SUROGATE_JWT_SECRET: ${JWT_SECRET}
+      SUROGATE_DATABASE_URL: postgresql://surogate:${DB_PASSWORD}@db:5432/surogate
+    volumes:
+      - ./skills:/data/skills
+      - ./sessions:/data/sessions
+      - ./workspace:/data/workspace
+    depends_on: [db]
+    restart: unless-stopped
+
+volumes:
+  pgdata:
 ```
 
 ```bash
@@ -184,8 +243,11 @@ docker compose up
 | `/data/skills` | User-authored skill definitions | `./skills` |
 | `/data/sessions` | Per-chat user workspaces | `./sessions` |
 | `/data/workspace` | Developer scratch area | `./workspace` |
+| `/data/surogate.db` | SQLite auth database (default) | included in `/data` volume |
 
-All three are declared as Docker `VOLUME`s. Mount them to persist data across container restarts.
+`/data` is declared as a Docker `VOLUME` — mount it to persist all data (skills, sessions, workspace, and the SQLite database) across container restarts.
+
+To use PostgreSQL instead, set `SUROGATE_DATABASE_URL=postgresql://user:pass@db:5432/surogate` and the `/data/surogate.db` file will not be created.
 
 ### Build for production (multi-platform)
 
@@ -229,15 +291,22 @@ Releases are fully automated via [release-please](https://github.com/googleapis/
 ```
 surogate-agent/
 ├── src/surogate_agent/     Python package
+│   ├── auth/               JWT auth — database, models, service, jwt, schemas
 │   ├── core/               create_agent(), Role, AgentConfig, Session
 │   ├── skills/             SkillLoader, SkillRegistry, builtin skills
 │   ├── middleware/         RoleGuardAgent
 │   ├── api/                FastAPI app, routers, models
 │   └── cli/                Typer CLI commands
+├── src/frontend/           Angular 19 + Tailwind CSS web UI
+│   ├── src/app/
+│   │   ├── core/           services, models, interceptors, guards
+│   │   ├── shared/         reusable components (chat, file-list, skill-tabs…)
+│   │   └── pages/          login, register, developer, user
+│   └── dist/               built output (git-ignored; Docker copies to /app/static)
 ├── tests/                  109 fully-mocked tests
 ├── docs/                   CLI, API, and development documentation
 ├── assets/                 Logo and other static assets
-├── Dockerfile              Two-stage production build
+├── Dockerfile              Three-stage production build (frontend + python + runtime)
 ├── .dockerignore
 ├── pyproject.toml          Package metadata, dependencies, tool config
 ├── uv.lock                 Locked dependency versions

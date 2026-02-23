@@ -1,0 +1,77 @@
+<div class="flex flex-col h-screen bg-white overflow-hidden">
+  <!-- Header -->
+  <header class="flex items-center gap-3 px-4 py-2 border-b border-gray-200 bg-white flex-none z-10">
+    <!-- Logo -->
+    <div class="flex items-center gap-2 flex-none mr-2">
+      <div class="inline-flex items-center justify-center w-12 h-12 mb-3">
+        <img [src]="'assets/inv-logo-horiz-black.svg'" style="width: 150px;" alt=""/>
+      </div>
+      <span class="text-sm font-semibold text-gray-700 hidden sm:block">Developer</span>
+    </div>
+
+    <!-- Skill tabs (flex-grow) -->
+    <div class="flex-1 min-w-0">
+      <app-skill-tabs
+        (activeSkillChange)="onActiveSkillChange($event)"
+        (newSkillRequested)="onNewSkillRequested()"
+      />
+    </div>
+
+    <!-- User + Settings + Exit -->
+    <div class="flex items-center gap-3 flex-none ml-2">
+      <span class="text-xs text-gray-400 hidden md:block">{{ userId }}</span>
+      <!-- Settings button -->
+      <button
+        (click)="settingsOpen.set(true)"
+        class="text-gray-400 hover:text-gray-600 transition-colors p-1.5 rounded-md hover:bg-gray-100"
+        title="Settings (model, API key)"
+      >
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+          <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+        </svg>
+      </button>
+      <button
+        (click)="exit()"
+        class="text-xs text-gray-400 hover:text-gray-600 transition-colors px-2 py-1 rounded-md hover:bg-gray-100"
+      >Exit</button>
+    </div>
+  </header>
+
+  <app-settings-panel [open]="settingsOpen()" (closed)="settingsOpen.set(false)" />
+
+  <!-- Body: 3 columns -->
+  <div class="flex flex-1 overflow-hidden">
+    <!-- Left: Skills browser -->
+    <aside class="w-72 flex-none border-r border-gray-200 overflow-hidden flex flex-col bg-white">
+      <app-skills-browser
+        (skillSelected)="onSkillSelectedFromBrowser($event)"
+      />
+    </aside>
+
+    <!-- Center: Developer chat -->
+    <main class="flex-1 flex flex-col min-w-0 bg-gray-50">
+      @if (!activeSkill()) {
+        <div class="flex-1 flex flex-col items-center justify-center text-center px-8">
+          <div class="text-4xl mb-4">🛠️</div>
+          <h2 class="text-lg font-semibold text-gray-700 mb-2">Ready to build</h2>
+          <p class="text-sm text-gray-500 max-w-xs">
+            Select a skill from the sidebar or open a new tab to start authoring. The agent will help you create, edit, and test skills.
+          </p>
+        </div>
+      }
+      <app-chat
+        role="developer"
+        [skill]="activeSkill()"
+        placeholder="Describe the skill you want to create or modify…"
+        (skillDetected)="onSkillDetected($event)"
+      />
+    </main>
+
+    <!-- Right: Workspace + Test as User -->
+    <aside class="w-80 flex-none border-l border-gray-200 flex flex-col overflow-y-auto bg-white scrollbar-thin p-3 gap-3">
+      <app-workspace-panel [skill]="activeSkill()" />
+      <app-user-test-panel />
+    </aside>
+  </div>
+</div>

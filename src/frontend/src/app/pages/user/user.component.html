@@ -1,0 +1,84 @@
+<div class="flex flex-col h-screen bg-white overflow-hidden">
+  <!-- Header -->
+  <header class="flex items-center gap-3 px-4 py-2.5 border-b border-gray-200 bg-white flex-none">
+    <div class="flex items-center gap-2 flex-none">
+      <div class="inline-flex items-center justify-center w-12 h-12 mb-3">
+        <img [src]="'assets/inv-logo-horiz-black.svg'" style="width: 150px;" alt=""/>
+      </div>
+      <span class="text-sm font-semibold text-gray-700">Surogate Agent</span>
+    </div>
+
+    <div class="flex-1"></div>
+
+    <!-- Session indicator -->
+    <span class="text-xs text-gray-400 font-mono hidden md:block">
+      {{ sessionId().slice(0, 12) }}…
+    </span>
+
+    <button
+      (click)="newSession()"
+      class="text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 hover:border-gray-300 transition-colors"
+    >
+      ✦ New session
+    </button>
+
+    <span class="text-xs text-gray-400 hidden md:block">{{ userId }}</span>
+
+    <!-- Settings button -->
+    <button
+      (click)="settingsOpen.set(true)"
+      class="text-gray-400 hover:text-gray-600 transition-colors p-1.5 rounded-md hover:bg-gray-100"
+      title="Settings (model, API key)"
+    >
+      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+        <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+      </svg>
+    </button>
+
+    <button
+      (click)="exit()"
+      class="text-xs text-gray-400 hover:text-gray-600 transition-colors px-2 py-1 rounded-md hover:bg-gray-100"
+    >Exit</button>
+  </header>
+
+  <app-settings-panel [open]="settingsOpen()" (closed)="settingsOpen.set(false)" />
+
+  <!-- Body: files left + chat right -->
+  <div class="flex flex-1 overflow-hidden">
+    <!-- Left: file panels -->
+    <aside class="w-72 flex-none border-r border-gray-200 overflow-y-auto bg-gray-50 scrollbar-thin p-4 flex flex-col gap-6">
+      <app-file-list
+        title="Input files"
+        [files]="inputFiles()"
+        emptyMessage="Upload files for the agent to read"
+        [uploadFn]="uploadFile"
+        [downloadFn]="downloadFile"
+        [deleteFn]="deleteFile"
+        (refreshed)="refreshInputFiles()"
+      />
+
+      <div class="border-t border-gray-200"></div>
+
+      <app-file-list
+        title="Output files"
+        [files]="outputFiles()"
+        emptyMessage="Agent-generated files appear here"
+        [allowUpload]="false"
+        [downloadFn]="downloadFile"
+        [deleteFn]="deleteFile"
+        (refreshed)="refreshOutputFiles()"
+      />
+    </aside>
+
+    <!-- Right: Chat -->
+    <main class="flex-1 min-w-0 flex flex-col">
+      <app-chat
+        role="user"
+        [sessionId]="sessionId()"
+        (sessionCreated)="onSessionCreated($event)"
+        (filesChanged)="onFilesChanged($event)"
+      />
+    </main>
+  </div>
+</div>

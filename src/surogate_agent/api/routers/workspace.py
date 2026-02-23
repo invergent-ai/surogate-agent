@@ -11,8 +11,13 @@ from fastapi.responses import FileResponse
 
 from surogate_agent.api.deps import ServerSettings, settings_dep
 from surogate_agent.api.models import FileInfo, WorkspaceResponse
+from surogate_agent.auth.jwt import get_current_user
 
-router = APIRouter(prefix="/workspace", tags=["workspace"])
+router = APIRouter(
+    prefix="/workspace",
+    tags=["workspace"],
+    dependencies=[Depends(get_current_user)],
+)
 
 
 def _file_infos(directory) -> list[FileInfo]:

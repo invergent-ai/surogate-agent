@@ -1,0 +1,60 @@
+<div class="border border-gray-200 rounded-lg overflow-hidden flex flex-col" [class.flex-1]="expanded()">
+  <!-- Header -->
+  <div class="flex items-center justify-between px-3 py-2 bg-purple-50 border-b border-gray-200 flex-none">
+    <button
+      (click)="expanded.set(!expanded())"
+      class="flex items-center gap-1.5 text-xs font-semibold text-purple-700 hover:text-purple-900 transition-colors"
+    >
+      <span class="text-[10px]">{{ expanded() ? '▼' : '▶' }}</span>
+      Test as User
+    </button>
+    @if (expanded()) {
+      <button
+        (click)="newSession()"
+        class="text-xs text-purple-600 hover:text-purple-800 transition-colors"
+        title="Start a fresh session"
+      >New session</button>
+    }
+  </div>
+
+  @if (expanded()) {
+    <!-- Session ID -->
+    <div class="px-3 py-1 bg-purple-50/50 border-b border-gray-100 flex-none">
+      <span class="text-[10px] text-gray-400 font-mono">session: {{ sessionId().slice(0, 12) }}…</span>
+    </div>
+
+    <!-- Files row -->
+    <div class="grid grid-cols-2 gap-3 p-3 border-b border-gray-100 flex-none">
+      <app-file-list
+        title="Input files"
+        [files]="inputFiles()"
+        emptyMessage="Upload files for the agent"
+        [uploadFn]="uploadFile"
+        [downloadFn]="downloadFile"
+        [deleteFn]="deleteFile"
+        (refreshed)="refreshInputFiles()"
+      />
+      <app-file-list
+        title="Output files"
+        [files]="outputFiles()"
+        emptyMessage="Agent output appears here"
+        [allowUpload]="false"
+        [downloadFn]="downloadFile"
+        [deleteFn]="deleteFile"
+        (refreshed)="refreshOutputFiles()"
+      />
+    </div>
+
+    <!-- Chat -->
+    <div class="flex-1 overflow-hidden" style="min-height: 200px">
+      <app-chat
+        role="user"
+        [sessionId]="sessionId()"
+        [compact]="true"
+        placeholder="Test as user…"
+        (sessionCreated)="onSessionCreated($event)"
+        (filesChanged)="onFilesChanged($event)"
+      />
+    </div>
+  }
+</div>

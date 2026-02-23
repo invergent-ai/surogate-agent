@@ -1,0 +1,52 @@
+<div class="flex items-center min-w-0 gap-1">
+  <!-- Left arrow -->
+  <button
+    (click)="scrollLeft()"
+    [disabled]="!canScrollLeft()"
+    class="flex-none px-1 text-gray-400 hover:text-gray-600 disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
+    title="Scroll tabs left"
+  >◀</button>
+
+  <!-- Tab strip -->
+  <div class="flex items-end min-w-0 gap-0.5 overflow-hidden">
+    @for (tab of visibleTabs(); track tab.name; let i = $index) {
+      <button
+        (click)="setActive(globalIndex(i))"
+        class="group flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-t-md border border-b-0 transition-colors whitespace-nowrap max-w-[140px]"
+        [class.bg-white]="isActive(i)"
+        [class.border-gray-300]="isActive(i)"
+        [class.text-gray-800]="isActive(i)"
+        [class.bg-gray-100]="!isActive(i)"
+        [class.border-transparent]="!isActive(i)"
+        [class.text-gray-500]="!isActive(i)"
+        [class.hover:bg-gray-50]="!isActive(i)"
+        [title]="tab.name"
+      >
+        <span class="truncate">{{ tabLabel(tab) }}</span>
+        @if (tab.dirty) {
+          <span class="text-amber-500 flex-none">●</span>
+        }
+        <span
+          (click)="closeTab(globalIndex(i), $event)"
+          class="flex-none text-gray-300 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100 leading-none"
+          title="Close"
+        >×</span>
+      </button>
+    }
+  </div>
+
+  <!-- Right arrow -->
+  <button
+    (click)="scrollRight()"
+    [disabled]="!canScrollRight()"
+    class="flex-none px-1 text-gray-400 hover:text-gray-600 disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
+    title="Scroll tabs right"
+  >▶</button>
+
+  <!-- New skill button -->
+  <button
+    (click)="newSkill()"
+    class="flex-none ml-1 px-2 py-1 text-xs rounded-md bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition-colors font-medium"
+    title="New skill"
+  >+ New</button>
+</div>

@@ -61,6 +61,10 @@ class AgentConfig:
     # Only set this after explicit user consent — it allows arbitrary commands on
     # the local machine.  Developer mode prompts for consent at session start.
     allow_execute: bool = False
+    # Optional API key supplied at request time (e.g. from the browser settings panel).
+    # Takes effect when the corresponding env var (ANTHROPIC_API_KEY / OPENAI_API_KEY)
+    # is not set in the server environment.
+    api_key: str = ""
 
     def __post_init__(self) -> None:
         # Always include the bundled builtin skills directory.

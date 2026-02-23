@@ -13,6 +13,8 @@ from starlette.requests import Request
 
 from surogate_agent.api.deps import ServerSettings, settings_dep
 from surogate_agent.api.models import ChatRequest
+from surogate_agent.auth.jwt import get_current_user
+from surogate_agent.auth.models import User
 from surogate_agent.core.agent import create_agent
 from surogate_agent.core.config import AgentConfig
 from surogate_agent.core.roles import Role
@@ -117,6 +119,7 @@ async def _stream_chat(
             sessions_dir=settings.sessions_dir,
             dev_workspace_dir=settings.workspace_dir,
             allow_execute=req.allow_execute,
+            api_key=req.api_key,
         )
 
         # Session setup
@@ -258,7 +261,12 @@ async def _stream_chat(
 
 
 @router.post("/chat")
-async def chat_endpoint(req: ChatRequest, request: Request, settings: ServerSettings = Depends(settings_dep)):
+async def chat_endpoint(
+    req: ChatRequest,
+    request: Request,
+    settings: ServerSettings = Depends(settings_dep),
+    current_user: User = Depends(get_current_user),
+):
     if EventSourceResponse is None:
         from fastapi.responses import JSONResponse
         return JSONResponse(
@@ -266,8 +274,11 @@ async def chat_endpoint(req: ChatRequest, request: Request, settings: ServerSett
             content={"detail": "sse-starlette is not installed. Run: pip install sse-starlette"},
         )
 
+    # Enforce role and user_id from the authenticated user (ignore client-supplied values)
+    authed_req = req.model_copy(update={"role": current_user.role, "user_id": current_user.username})
+
     async def generator():
-        async for event in _stream_chat(req, settings):
+        async for event in _stream_chat(authed_req, settings):
             yield event
 
     return EventSourceResponse(generator())

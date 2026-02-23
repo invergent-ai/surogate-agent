@@ -1,0 +1,178 @@
+import {
+  Component, Input, Output, EventEmitter, signal, computed,
+  ViewChild, ElementRef, OnDestroy, effect
+} from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import { Subscription } from 'rxjs';
+import { ChatService } from '../../../core/services/chat.service';
+import {
+  ChatMessage, MessageBlock, SseEvent, ToolBlock
+} from '../../../core/models/chat.models';
+import { MessageBubbleComponent } from '../message-bubble/message-bubble.component';
+
+let msgCounter = 0;
+function nextId() { return `msg-${++msgCounter}`; }
+
+// Regex to extract skill name from paths like "skills/foo/SKILL.md"
+const SKILL_PATH_RE = /skills\/([^/]+)\/SKILL\.md/;
+
+@Component({
+  selector: 'app-chat',
+  standalone: true,
+  imports: [CommonModule, FormsModule, MessageBubbleComponent],
+  templateUrl: './chat.component.html',
+})
+export class ChatComponent implements OnDestroy {
+  @ViewChild('messageList') private messageListRef!: ElementRef<HTMLElement>;
+
+  @Input() role: 'developer' | 'user' = 'user';
+  @Input() skill = '';
+  @Input() sessionId = '';
+  @Input() compact = false;
+  @Input() placeholder = 'Type a message…';
+
+  @Output() sessionCreated = new EventEmitter<string>();
+  @Output() skillDetected = new EventEmitter<string>();
+  @Output() filesChanged = new EventEmitter<string[]>();
+
+  messages = signal<ChatMessage[]>([]);
+  streaming = signal(false);
+  currentSessionId = signal('');
+  inputText = signal('');
+
+  private sub?: Subscription;
+
+  constructor(
+    private chatService: ChatService,
+  ) {
+    effect(() => {
+      // Keep sessionId in sync when parent updates it
+      if (this.sessionId) this.currentSessionId.set(this.sessionId);
+    });
+  }
+
+  send() {
+    const text = this.inputText().trim();
+    if (!text || this.streaming()) return;
+
+    this.inputText.set('');
+    this.messages.update(msgs => [
+      ...msgs,
+      { id: nextId(), role: 'user', blocks: [{ type: 'text', text }], timestamp: new Date(), finalized: true },
+    ]);
+
+    const assistantId = nextId();
+    this.messages.update(msgs => [
+      ...msgs,
+      { id: assistantId, role: 'assistant', blocks: [], timestamp: new Date(), finalized: false },
+    ]);
+
+    this.streaming.set(true);
+    this.scrollToBottom();
+
+    this.sub = this.chatService.streamChat({
+      message: text,
+      role: this.role,
+      session_id: this.currentSessionId() || undefined,
+      skill: this.skill || undefined,
+    }).subscribe({
+      next: (ev: SseEvent) => this.handleEvent(ev, assistantId),
+      error: (err) => {
+        this.finalizeAssistant(assistantId, [{ type: 'error', text: String(err?.message ?? err) }]);
+        this.streaming.set(false);
+      },
+      complete: () => this.streaming.set(false),
+    });
+  }
+
+  private handleEvent(ev: SseEvent, assistantId: string) {
+    this.messages.update(msgs => {
+      const idx = msgs.findIndex(m => m.id === assistantId);
+      if (idx < 0) return msgs;
+      const copy = [...msgs];
+      const msg = { ...copy[idx], blocks: [...copy[idx].blocks] };
+
+      switch (ev.event) {
+        case 'thinking':
+          msg.blocks.push({ type: 'thinking', text: ev.data.text, collapsed: true });
+          break;
+        case 'tool_call': {
+          const tc: ToolBlock = { type: 'tool_call', name: ev.data.name, args: ev.data.args, collapsed: true };
+          msg.blocks.push(tc);
+          // Detect skill from write_file calls
+          const path = (ev.data.args?.['path'] ?? ev.data.args?.['file_path'] ?? '') as string;
+          const m = path.match(SKILL_PATH_RE);
+          if (m) this.skillDetected.emit(m[1]);
+          break;
+        }
+        case 'tool_result': {
+          // Attach result to last matching tool_call block
+          const tcIdx = [...msg.blocks].reverse().findIndex(
+            b => b.type === 'tool_call' && (b as ToolBlock).name === ev.data.name && !(b as ToolBlock).result
+          );
+          if (tcIdx >= 0) {
+            const realIdx = msg.blocks.length - 1 - tcIdx;
+            (msg.blocks[realIdx] as ToolBlock).result = ev.data.result;
+          }
+          break;
+        }
+        case 'text':
+          // Append to last text block or create new one
+          if (msg.blocks.length > 0 && msg.blocks[msg.blocks.length - 1].type === 'text') {
+            (msg.blocks[msg.blocks.length - 1] as { text: string }).text += ev.data.text;
+          } else {
+            msg.blocks.push({ type: 'text', text: ev.data.text });
+          }
+          break;
+        case 'done':
+          msg.finalized = true;
+          if (ev.data.session_id) {
+            const sid = ev.data.session_id;
+            if (!this.currentSessionId()) {
+              this.currentSessionId.set(sid);
+              this.sessionCreated.emit(sid);
+            }
+          }
+          if (ev.data.files?.length) this.filesChanged.emit(ev.data.files);
+          break;
+        case 'error':
+          msg.blocks.push({ type: 'error', text: ev.data.detail });
+          msg.finalized = true;
+          break;
+      }
+
+      copy[idx] = msg;
+      return copy;
+    });
+    this.scrollToBottom();
+  }
+
+  private finalizeAssistant(id: string, extraBlocks: MessageBlock[]) {
+    this.messages.update(msgs => {
+      const idx = msgs.findIndex(m => m.id === id);
+      if (idx < 0) return msgs;
+      const copy = [...msgs];
+      copy[idx] = { ...copy[idx], blocks: [...copy[idx].blocks, ...extraBlocks], finalized: true };
+      return copy;
+    });
+  }
+
+  clearMessages() {
+    this.messages.set([]);
+    this.currentSessionId.set('');
+  }
+
+  onKeydown(e: KeyboardEvent) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); this.send(); }
+  }
+
+  private scrollToBottom() {
+    setTimeout(() => {
+      const el = this.messageListRef?.nativeElement;
+      if (el) el.scrollTop = el.scrollHeight;
+    }, 0);
+  }
+
+  ngOnDestroy() { this.sub?.unsubscribe(); }
+}

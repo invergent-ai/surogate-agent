@@ -9,9 +9,14 @@ from fastapi.responses import FileResponse
 
 from surogate_agent.api.deps import ServerSettings, settings_dep
 from surogate_agent.api.models import FileInfo, SessionResponse
+from surogate_agent.auth.jwt import get_current_user
 from surogate_agent.core.session import SessionManager
 
-router = APIRouter(prefix="/sessions", tags=["sessions"])
+router = APIRouter(
+    prefix="/sessions",
+    tags=["sessions"],
+    dependencies=[Depends(get_current_user)],
+)
 
 
 def _session_manager(settings: ServerSettings) -> SessionManager:

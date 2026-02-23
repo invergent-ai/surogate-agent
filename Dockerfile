@@ -1,3 +1,13 @@
+# ─── Stage 0: build Angular frontend ─────────────────────────────────────────
+FROM node:20-slim AS frontend-builder
+
+WORKDIR /frontend
+COPY src/frontend/package*.json ./
+RUN npm ci
+COPY src/frontend/ ./
+RUN npx ng build --configuration production
+
+
 # ─── Stage 1: build venv ──────────────────────────────────────────────────────
 FROM ubuntu:24.04 AS builder
 
@@ -20,7 +30,7 @@ COPY src/ src/
 # --frozen  → respect uv.lock exactly
 # --no-dev  → skip dev-only tools (pytest, ruff, mypy)
 # --python  → pin to the same Python the runtime will use
-RUN uv sync --frozen --no-dev --extra anthropic --extra openai --extra api --python /usr/bin/python3.12
+RUN uv sync --frozen --no-dev --extra anthropic --extra openai --extra api --extra auth --python /usr/bin/python3.12
 
 
 # ─── Stage 2: runtime image ───────────────────────────────────────────────────
@@ -44,6 +54,9 @@ WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv
 COPY --from=builder /app/src   /app/src
 
+# Copy Angular build output
+COPY --from=frontend-builder /frontend/dist/surogate-frontend/browser /app/static
+
 # Put the venv on PATH
 ENV PATH="/app/.venv/bin:$PATH"
 
@@ -51,15 +64,17 @@ ENV PATH="/app/.venv/bin:$PATH"
 ENV SUROGATE_SKILLS_DIR=/data/skills \
     SUROGATE_SESSIONS_DIR=/data/sessions \
     SUROGATE_WORKSPACE_DIR=/data/workspace \
-    SUROGATE_MODEL=claude-sonnet-4-6
+    SUROGATE_MODEL=claude-sonnet-4-6 \
+    SUROGATE_STATIC_DIR=/app/static \
+    SUROGATE_DATABASE_URL=sqlite:////data/surogate.db
 
 # Create data directories
 RUN mkdir -p /data/skills /data/sessions /data/workspace
 
 EXPOSE 8000
 
-# Declare data directories as volumes so they can be mounted externally
-VOLUME ["/data/skills", "/data/sessions", "/data/workspace"]
+# Declare /data as a volume so the SQLite DB and all data dirs persist across restarts
+VOLUME ["/data"]
 
 # Health check — verifies the API is reachable
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \

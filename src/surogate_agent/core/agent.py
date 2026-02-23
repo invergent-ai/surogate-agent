@@ -29,20 +29,42 @@ def _import_deepagents():
         ) from exc
 
 
-def _build_llm(model: str):
-    """Instantiate a LangChain chat model from a model-string shorthand."""
+def _build_llm(model: str, api_key: str = ""):
+    """Instantiate a LangChain chat model from a model-string shorthand.
+
+    Parameters
+    ----------
+    model:
+        LangChain model string, e.g. ``"claude-sonnet-4-6"`` or ``"gpt-4o"``.
+    api_key:
+        Optional API key supplied at request time (e.g. from the browser
+        settings panel).  The server-side environment variable always takes
+        precedence; this value is only used when the env var is absent.
+    """
     if model.startswith("claude"):
+        resolved_key = os.environ.get("ANTHROPIC_API_KEY", "") or api_key
+        if not resolved_key:
+            raise ValueError(
+                "ANTHROPIC_API_KEY is not configured. Set it as a server "
+                "environment variable, or enter your API key in Settings."
+            )
         try:
             from langchain_anthropic import ChatAnthropic  # type: ignore
-            return ChatAnthropic(model=model)
+            return ChatAnthropic(model=model, api_key=resolved_key)
         except ImportError:
             raise ImportError(
                 "Install langchain-anthropic: pip install 'surogate-agent[anthropic]'"
             )
     if model.startswith("gpt") or model.startswith("o1") or model.startswith("o3"):
+        resolved_key = os.environ.get("OPENAI_API_KEY", "") or api_key
+        if not resolved_key:
+            raise ValueError(
+                "OPENAI_API_KEY is not configured. Set it as a server "
+                "environment variable, or enter your API key in Settings."
+            )
         try:
             from langchain_openai import ChatOpenAI  # type: ignore
-            return ChatOpenAI(model=model)
+            return ChatOpenAI(model=model, api_key=resolved_key)
         except ImportError:
             raise ImportError(
                 "Install langchain-openai: pip install 'surogate-agent[openai]'"
@@ -121,7 +143,7 @@ def create_agent(
             skill_sources.append(s)
 
     create_deep_agent = _import_deepagents()
-    llm = _build_llm(config.model)
+    llm = _build_llm(config.model, api_key=config.api_key)
 
     # Choose backend based on whether shell execution is needed.
     #

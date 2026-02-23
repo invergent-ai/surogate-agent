@@ -1,0 +1,28 @@
+<div class="my-1.5 rounded-md overflow-hidden border border-gray-700 bg-gray-900 text-xs font-mono">
+  <button
+    (click)="toggle()"
+    class="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-gray-800 transition-colors"
+  >
+    <span class="text-indigo-400">⚙</span>
+    <span class="text-indigo-300 font-semibold">{{ block.name }}</span>
+    @if (block.result) {
+      <span class="ml-1 text-green-500 text-[10px]">✓</span>
+    } @else {
+      <span class="ml-1 text-yellow-500 text-[10px] animate-pulse">…</span>
+    }
+    <span class="ml-auto text-gray-600 text-[10px]">{{ collapsed() ? '▶' : '▼' }}</span>
+  </button>
+
+  @if (!collapsed()) {
+    <div class="border-t border-gray-700 px-3 py-2">
+      <p class="text-gray-500 text-[10px] uppercase tracking-wider mb-1">args</p>
+      <pre class="text-gray-300 overflow-x-auto whitespace-pre-wrap break-all">{{ argsJson }}</pre>
+    </div>
+    @if (block.result) {
+      <div class="border-t border-gray-700 px-3 py-2">
+        <p class="text-gray-500 text-[10px] uppercase tracking-wider mb-1">result</p>
+        <pre class="text-green-400 overflow-x-auto whitespace-pre-wrap break-all">{{ block.result }}</pre>
+      </div>
+    }
+  }
+</div>

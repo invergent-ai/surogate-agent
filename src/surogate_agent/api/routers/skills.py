@@ -19,12 +19,17 @@ from surogate_agent.api.models import (
     SkillResponse,
     ValidationResult,
 )
+from surogate_agent.auth.jwt import get_current_user
 from surogate_agent.core.config import _DEFAULT_SKILLS_DIR
 from surogate_agent.core.roles import Role
 from surogate_agent.skills.loader import SkillLoader, _parse_skill
 from surogate_agent.skills.registry import SkillRegistry
 
-router = APIRouter(prefix="/skills", tags=["skills"])
+router = APIRouter(
+    prefix="/skills",
+    tags=["skills"],
+    dependencies=[Depends(get_current_user)],
+)
 
 _SKILL_FILENAME = "SKILL.md"
 

@@ -52,7 +52,8 @@ Surogate Agent is the engine behind the conversational skill-development workflo
 
 ## Key Features
 
-- **Two-role architecture** — `DEVELOPER` and `USER` roles control skill visibility and tool access at the framework level; no per-request configuration needed.
+- **Two-role architecture** — `DEVELOPER` and `USER` roles control skill visibility and tool access at the framework level; roles are stored server-side per user and derived from a signed JWT.
+- **JWT authentication** — every API endpoint is protected. Users register with a username/email/password; on login they receive a Bearer token that encodes their role.
 - **Meta-skill for zero-code skill authoring** — developers create and iterate on skills purely through conversation.
 - **Skill format** — plain Markdown with YAML frontmatter (`SKILL.md`). Skills are directories; helper files (prompts, schemas, templates) live alongside the definition.
 - **Automatic shell backend selection** — if any installed skill declares `execute` in its `allowed-tools`, `LocalShellBackend` is activated automatically; no explicit opt-in required.
@@ -61,6 +62,7 @@ Surogate Agent is the engine behind the conversational skill-development workflo
 - **Persistent conversation history** — per-skill SQLite checkpointing lets developers resume exactly where they left off across sessions.
 - **Multi-model support** — `claude-*` → Anthropic, `gpt-*` / `o1-*` / `o3-*` → OpenAI; swap with one env var.
 - **REST API with SSE streaming** — `POST /chat` streams agent output as Server-Sent Events. Full CRUD for skills, sessions, and workspaces over HTTP.
+- **Angular web UI** — served by the FastAPI process at `/`. Developer IDE (skill tabs, workspace, test panel) and User chat (input/output files) perspectives.
 - **Interactive CLI** — 25 commands across four command groups (`chat`, `skills`, `session`, `workspace`) with rich terminal output.
 - **Fully mocked test suite** — 109 tests, no LLM or network required.
 
@@ -71,9 +73,10 @@ Surogate Agent is the engine behind the conversational skill-development workflo
 ### Install
 
 ```bash
-pip install "surogate-agent[anthropic]"   # Claude models
-pip install "surogate-agent[openai]"      # OpenAI models
-pip install "surogate-agent[api]"         # + FastAPI REST server
+pip install "surogate-agent[anthropic]"        # Claude models
+pip install "surogate-agent[openai]"           # OpenAI models
+pip install "surogate-agent[api]"              # + FastAPI REST server
+pip install "surogate-agent[api,auth]"         # + JWT authentication + web UI
 ```
 
 Set your API key:
@@ -141,15 +144,26 @@ agent = create_agent(role=Role.USER, config=config)
 ### REST API
 
 ```bash
-pip install "surogate-agent[api]"
+pip install "surogate-agent[api,auth]"
 surogate-agent serve               # starts on http://127.0.0.1:8000
 ```
 
 ```bash
-# Stream a chat response via SSE
+# 1. Register a new user
+curl -X POST http://localhost:8000/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"username": "alice", "email": "alice@example.com", "password": "secret123", "role": "user"}'
+
+# 2. Log in and capture the token
+TOKEN=$(curl -s -X POST http://localhost:8000/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username": "alice", "password": "secret123"}' | jq -r .access_token)
+
+# 3. Stream a chat response via SSE
 curl -X POST http://localhost:8000/chat \
   -H "Content-Type: application/json" \
-  -d '{"message": "Summarise my Jira tickets", "role": "user"}' \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"message": "Summarise my Jira tickets"}' \
   --no-buffer
 
 # event: text
@@ -158,19 +172,35 @@ curl -X POST http://localhost:8000/chat \
 # data: {"session_id": "20260101-120000-abc123", "files": []}
 ```
 
+The web UI is available at `http://localhost:8000` — register, log in, and use the agent directly in your browser.
+
 ### Run with Docker
 
 ```bash
 docker run --rm \
   -e ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY \
+  -e SUROGATE_JWT_SECRET=change-me-in-production \
   -p 8000:8000 \
-  -v $(pwd)/skills:/data/skills \
-  -v $(pwd)/sessions:/data/sessions \
-  -v $(pwd)/workspace:/data/workspace \
+  -v $(pwd)/data:/data \
   ghcr.io/invergent-ai/surogate-agent:latest
 ```
 
-API available at `http://localhost:8000` · Swagger UI at `http://localhost:8000/docs`
+Mounting `./data` to `/data` persists all state — skills, sessions, workspace files, and the SQLite database (`data/surogate.db`).
+
+- API available at `http://localhost:8000`
+- Web UI at `http://localhost:8000`
+- Swagger UI at `http://localhost:8000/docs`
+
+For production with PostgreSQL:
+
+```bash
+docker run --rm \
+  -e ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY \
+  -e SUROGATE_JWT_SECRET=$JWT_SECRET \
+  -e SUROGATE_DATABASE_URL=postgresql://user:pass@db:5432/surogate \
+  -p 8000:8000 \
+  ghcr.io/invergent-ai/surogate-agent:latest
+```
 
 ---
 
@@ -336,6 +366,12 @@ The meta-skill guides the agent to produce exactly this format during `DEVELOPER
 
 ```
 src/surogate_agent/
+├── auth/
+│   ├── database.py       SQLAlchemy engine (SQLite / PostgreSQL)
+│   ├── models.py         User ORM model
+│   ├── schemas.py        Pydantic auth schemas
+│   ├── service.py        password hashing, user CRUD
+│   └── jwt.py            JWT creation, get_current_user dependency
 ├── core/
 │   ├── agent.py          create_agent() factory
 │   ├── config.py         AgentConfig
@@ -355,6 +391,7 @@ src/surogate_agent/
 │   ├── models.py         Pydantic request/response models
 │   ├── server.py         uvicorn entry point
 │   └── routers/
+│       ├── auth.py       /auth endpoints (register, login, me)
 │       ├── chat.py       POST /chat  (SSE stream)
 │       ├── skills.py     /skills CRUD
 │       ├── sessions.py   /sessions CRUD
@@ -365,6 +402,7 @@ src/surogate_agent/
     ├── skills.py         skills subcommands
     ├── session.py        session subcommands
     └── workspace.py      workspace subcommands
+src/frontend/             Angular 19 + Tailwind CSS web UI
 tests/
 ├── test_agent.py
 ├── test_roles.py
@@ -401,6 +439,9 @@ config = AgentConfig(
 | `SUROGATE_SKILLS_DIR` | `./skills` | User skills root (API server) |
 | `SUROGATE_SESSIONS_DIR` | `./sessions` | Session workspaces root (API server) |
 | `SUROGATE_WORKSPACE_DIR` | `./workspace` | Dev workspace root (API server) |
+| `SUROGATE_DATABASE_URL` | `sqlite:///./surogate.db` (local) / `sqlite:////data/surogate.db` (Docker default) | Auth database — SQLite (dev) or PostgreSQL (prod) |
+| `SUROGATE_JWT_SECRET` | `change-me-in-production` | JWT signing secret — **must be overridden in production** |
+| `SUROGATE_ACCESS_TOKEN_EXPIRE_MINUTES` | `480` (8 h) | JWT token lifetime |
 
 ---
 
@@ -412,9 +453,9 @@ git clone https://github.com/invergent-ai/surogate-agent
 cd surogate-agent
 
 # Install for development (Python 3.12+ recommended)
-pip install -e ".[dev,anthropic,api]"
+pip install -e ".[dev,anthropic,api,auth]"
 # or with uv:
-uv sync --extra dev --extra anthropic --extra api
+uv sync --extra dev --extra anthropic --extra api --extra auth
 
 # Run the test suite (no LLM required — all mocked)
 pytest tests/ -v

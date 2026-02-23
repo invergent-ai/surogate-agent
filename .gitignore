@@ -17,3 +17,5 @@ skills/
 htmlcov/
 .coverage
 .idea/
+/src/frontend/surogate.db
+/surogate.db

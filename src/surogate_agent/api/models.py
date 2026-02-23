@@ -22,6 +22,7 @@ class ChatRequest(BaseModel):
     model: str = ""
     user_id: str = ""
     allow_execute: bool = False
+    api_key: str = ""  # client-supplied key; used only when server env var is absent
 
 
 class SkillCreateRequest(BaseModel):

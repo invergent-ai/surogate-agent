@@ -124,7 +124,8 @@ Natural-language instructions the agent follows when this skill is active.
 ### Install
 
 ```bash
-pip install -e ".[api]"    # fastapi, sse-starlette, uvicorn, python-multipart
+pip install -e ".[api]"       # fastapi, sse-starlette, uvicorn, python-multipart
+pip install -e ".[api,auth]"  # + JWT auth (sqlalchemy, passlib, python-jose, pydantic[email])
 ```
 
 ### Start the server
@@ -143,11 +144,19 @@ surogate-agent-api                       # standalone entry point
 | `SUROGATE_SESSIONS_DIR` | `./sessions` | Session workspaces root |
 | `SUROGATE_WORKSPACE_DIR` | `./workspace` | Dev scratch workspace root |
 | `SUROGATE_MODEL` | `claude-sonnet-4-6` | Default LLM model |
+| `SUROGATE_DATABASE_URL` | `sqlite:///./surogate.db` (local) / `sqlite:////data/surogate.db` (Docker) | Auth DB — SQLite (dev) or PostgreSQL (prod) |
+| `SUROGATE_JWT_SECRET` | `change-me-in-production` | JWT signing secret |
+| `SUROGATE_ACCESS_TOKEN_EXPIRE_MINUTES` | `480` | JWT token lifetime (minutes) |
 
 ### Endpoints
 
+All endpoints except `/auth/*` require `Authorization: Bearer <token>`.
+
 | Method | Path | Description |
 |--------|------|-------------|
+| `POST` | `/auth/register` | Register a new user (public) |
+| `POST` | `/auth/login` | Login → JWT token (public) |
+| `GET` | `/auth/me` | Current user info |
 | `POST` | `/chat` | SSE stream (`text/event-stream`) — chat with the agent |
 | `GET` | `/skills` | List skills (`?role=all\|developer\|user`) |
 | `GET/POST/DELETE` | `/skills/{name}` | Get / create / delete a skill |
@@ -162,10 +171,16 @@ surogate-agent-api                       # standalone entry point
 
 | Path | Purpose |
 |------|---------|
+| `src/surogate_agent/auth/database.py` | SQLAlchemy engine + `get_db()` |
+| `src/surogate_agent/auth/models.py` | `User` ORM model |
+| `src/surogate_agent/auth/schemas.py` | Pydantic auth schemas |
+| `src/surogate_agent/auth/service.py` | Password hashing, user CRUD |
+| `src/surogate_agent/auth/jwt.py` | `create_access_token`, `get_current_user` |
 | `src/surogate_agent/api/app.py` | `create_app()` factory — wires routers + CORS |
 | `src/surogate_agent/api/deps.py` | `ServerSettings` dataclass + `Depends` injection |
 | `src/surogate_agent/api/models.py` | All Pydantic request/response models |
 | `src/surogate_agent/api/server.py` | `main()` uvicorn entry point |
+| `src/surogate_agent/api/routers/auth.py` | Auth endpoints (register, login, me) |
 | `src/surogate_agent/api/routers/chat.py` | SSE chat endpoint |
 | `src/surogate_agent/api/routers/skills.py` | Skills CRUD |
 | `src/surogate_agent/api/routers/sessions.py` | Sessions CRUD |
