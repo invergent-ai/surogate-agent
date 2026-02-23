@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip show:*)",
+      "Bash(python3:*)",
+      "WebSearch",
+      "WebFetch(domain:pypi.org)",
+      "Bash(pip install:*)",
+      "Bash(python -m pytest:*)",
+      "Bash(uv run:*)",
+      "Bash(source .venv/bin/activate && which pytest python pip 2>/dev/null)",
+      "Bash(source .venv/bin/activate && python -m pytest tests/e2e/test_generate_mandate_journey.py::TestGenerateMandatePhase2::test_first_dev_message_stream_structure -v -s 2>&1)",
+      "Bash(echo pytest not in venv:*)",
+      "Bash(/work/Product/Surogate/agent/.venv/bin/python:*)",
+      "Bash(env)",
+      "Bash(head:*)",
+      "Bash(.venv/bin/python:*)",
+      "Bash(tail:*)",
+      "Bash(git:*)",
+      "Bash(python:*)"
+    ]
+  }
+}

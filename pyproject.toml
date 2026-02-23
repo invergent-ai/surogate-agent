@@ -1,0 +1,77 @@
+[project]
+name = "surogate-agent"
+version = "0.1.0"
+description = "Role-aware deep agent with meta-skill for conversational skill development"
+authors = [{ name = "The Invergent Team" }]
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+readme = "README.md"
+requires-python = ">=3.12"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+dependencies = [
+    "deepagents>=0.4.0",
+    "langchain-core>=0.3.0",
+    "langgraph>=0.3.0",
+    "pydantic>=2.0",
+    "pyyaml>=6.0",
+    "typer>=0.12",
+    "rich>=13.0",
+    "prompt-toolkit>=3.0.52",
+    "langgraph-checkpoint-sqlite>=3.0.3",
+]
+
+[project.optional-dependencies]
+anthropic = ["langchain-anthropic>=0.3.0"]
+openai    = ["langchain-openai>=0.3.0"]
+api       = [
+    "fastapi>=0.115.0",
+    "sse-starlette>=2.1.0",
+    "uvicorn[standard]>=0.30.0",
+    "python-multipart>=0.0.9",
+]
+dev       = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "pytest-mock>=3.14",
+    "ruff>=0.4",
+    "mypy>=1.10",
+]
+
+[project.scripts]
+surogate-agent     = "surogate_agent.cli.main:app"
+surogate-agent-api = "surogate_agent.api.server:main"
+
+[project.urls]
+Homepage      = "https://github.com/invergent-ai/surogate"
+Documentation = "https://docs.surogate.ai"
+
+[build-system]
+requires      = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/surogate_agent"]
+
+[tool.uv]
+
+[tool.uv.sources]
+# Pin extras to specific indices if needed in the future
+
+[tool.pytest.ini_options]
+testpaths     = ["tests"]
+asyncio_mode  = "auto"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
