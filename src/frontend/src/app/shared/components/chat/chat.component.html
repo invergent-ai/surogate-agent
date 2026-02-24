@@ -8,7 +8,7 @@
   >
     @if (messages().length === 0) {
       <div class="flex h-full items-center justify-center">
-        <p class="text-gray-400 text-sm italic">
+        <p class="text-gray-400 dark:text-zinc-500 text-sm italic">
           {{ role === 'developer' ? 'Start a conversation to author or manage skills…' : 'How can I help you today?' }}
         </p>
       </div>
@@ -18,18 +18,18 @@
     }
     @if (streaming()) {
       <div class="flex gap-1 px-4 pb-2">
-        <span class="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce [animation-delay:-0.3s]"></span>
-        <span class="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce [animation-delay:-0.15s]"></span>
-        <span class="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce"></span>
+        <span class="w-1.5 h-1.5 bg-brand rounded-full animate-bounce [animation-delay:-0.3s]"></span>
+        <span class="w-1.5 h-1.5 bg-brand rounded-full animate-bounce [animation-delay:-0.15s]"></span>
+        <span class="w-1.5 h-1.5 bg-brand rounded-full animate-bounce"></span>
       </div>
     }
   </div>
 
   <!-- Input area -->
-  <div class="border-t border-gray-200 bg-white p-3" [class.p-2]="compact">
+  <div class="border-t border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-3" [class.p-2]="compact">
     <div class="flex gap-2 items-end">
       <textarea
-        class="flex-1 resize-none rounded-xl border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-indigo-400 transition-colors max-h-40 scrollbar-thin"
+        class="flex-1 resize-none rounded-xl border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-50 placeholder:text-gray-400 dark:placeholder:text-zinc-500 px-3 py-2 text-sm focus:outline-none focus:border-amber-400 dark:focus:border-amber-500 transition-colors max-h-40 scrollbar-thin"
         [class.text-xs]="compact"
         [rows]="compact ? 1 : 2"
         [placeholder]="placeholder"
@@ -41,7 +41,7 @@
       <button
         (click)="send()"
         [disabled]="!inputText().trim() || streaming()"
-        class="flex-none px-4 py-2 rounded-xl bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        class="flex-none px-4 py-2 rounded-xl bg-brand text-zinc-900 text-sm font-medium hover:bg-brand-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         [class.px-3]="compact"
         [class.py-1.5]="compact"
         [class.text-xs]="compact"

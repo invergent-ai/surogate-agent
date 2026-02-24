@@ -1,10 +1,10 @@
 <div class="flex flex-col gap-2">
   <div class="flex items-center justify-between">
-    <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider">{{ title }}</h3>
+    <h3 class="text-xs font-semibold text-gray-500 dark:text-zinc-400 uppercase tracking-wider">{{ title }}</h3>
     @if (allowUpload) {
       <button
         (click)="fileInputRef.nativeElement.click()"
-        class="text-xs text-indigo-600 hover:text-indigo-800 transition-colors"
+        class="text-xs text-amber-600 dark:text-amber-400 hover:text-amber-800 dark:hover:text-amber-300 transition-colors"
         [disabled]="uploading()"
       >
         {{ uploading() ? 'Uploading…' : '+ Upload' }}
@@ -16,10 +16,10 @@
   <!-- Drop zone -->
   @if (allowUpload) {
     <div
-      class="border-2 border-dashed rounded-lg p-3 text-center text-xs text-gray-400 transition-colors cursor-pointer"
-      [class.border-indigo-400]="dragging()"
-      [class.border-gray-200]="!dragging()"
-      [class.bg-indigo-50]="dragging()"
+      class="border-2 border-dashed rounded-lg p-3 text-center text-xs text-gray-400 dark:text-zinc-500 transition-colors cursor-pointer"
+      [ngClass]="dragging()
+        ? 'border-amber-400 dark:border-amber-500 bg-amber-50 dark:bg-amber-950/20'
+        : 'border-gray-200 dark:border-zinc-700'"
       (dragover)="onDragOver($event)"
       (dragleave)="onDragLeave()"
       (drop)="onDrop($event)"
@@ -31,17 +31,17 @@
 
   <!-- File list -->
   @if (files.length === 0) {
-    <p class="text-xs text-gray-400 italic px-1">{{ emptyMessage }}</p>
+    <p class="text-xs text-gray-400 dark:text-zinc-500 italic px-1">{{ emptyMessage }}</p>
   } @else {
     <ul class="space-y-1">
       @for (file of files; track file.name) {
-        <li class="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-gray-50 group">
-          <span class="flex-1 text-sm text-gray-700 truncate" [title]="file.name">{{ file.name }}</span>
-          <span class="text-xs text-gray-400 flex-none">{{ formatBytes(file.size_bytes) }}</span>
+        <li class="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-gray-50 dark:hover:bg-zinc-800 group">
+          <span class="flex-1 text-sm text-gray-700 dark:text-zinc-300 truncate" [title]="file.name">{{ file.name }}</span>
+          <span class="text-xs text-gray-400 dark:text-zinc-500 flex-none">{{ formatBytes(file.size_bytes) }}</span>
           @if (downloadFn) {
             <button
               (click)="download(file.name)"
-              class="text-gray-400 hover:text-indigo-600 opacity-0 group-hover:opacity-100 transition-all text-sm"
+              class="text-gray-400 dark:text-zinc-500 hover:text-amber-600 dark:hover:text-amber-400 opacity-0 group-hover:opacity-100 transition-all text-sm"
               title="Download"
             >↓</button>
           }
@@ -49,7 +49,7 @@
             <button
               (click)="delete(file.name)"
               [disabled]="deleting() === file.name"
-              class="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all text-sm"
+              class="text-gray-400 dark:text-zinc-500 hover:text-red-500 dark:hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all text-sm"
               title="Delete"
             >
               {{ deleting() === file.name ? '…' : '×' }}

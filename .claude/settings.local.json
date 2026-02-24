@@ -26,7 +26,9 @@
       "Bash(node:*)",
       "Bash(grep:*)",
       "Bash(SUROGATE_STATIC_DIR=\"src/frontend/dist/surogate-frontend/browser\" .venv/bin/python:*)",
-      "Bash(grep ^Version::*)"
+      "Bash(grep ^Version::*)",
+      "WebFetch(domain:surogate.ai)",
+      "Bash(wc:*)"
     ]
   }
 }

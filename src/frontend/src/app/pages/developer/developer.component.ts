@@ -1,4 +1,4 @@
-import { Component, ViewChild, signal } from '@angular/core';
+import { Component, ViewChild, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
 import { SkillTabsComponent } from '../../shared/components/skill-tabs/skill-tabs.component';
@@ -9,6 +9,7 @@ import { UserTestPanelComponent } from './panels/user-test-panel/user-test-panel
 import { SettingsPanelComponent } from '../../shared/components/settings-panel/settings-panel.component';
 import { AuthService } from '../../core/services/auth.service';
 import { SettingsService } from '../../core/services/settings.service';
+import { ThemeService } from '../../core/services/theme.service';
 
 @Component({
   selector: 'app-developer',
@@ -30,8 +31,9 @@ export class DeveloperComponent {
   @ViewChild(ChatComponent) devChat!: ChatComponent;
 
   activeSkill = signal('');
-
   settingsOpen = signal(false);
+
+  readonly theme = inject(ThemeService);
 
   constructor(
     private auth: AuthService,
@@ -43,15 +45,12 @@ export class DeveloperComponent {
 
   onActiveSkillChange(name: string) {
     this.activeSkill.set(name);
-    // Reset dev chat when switching skills
     if (this.devChat) this.devChat.clearMessages();
   }
 
   onSkillDetected(name: string) {
-    // Auto-open tab when agent writes to a skill path
     if (this.skillTabs) {
       this.skillTabs.openOrFocus(name);
-      // Refresh skills browser too
       if (this.skillsBrowser) this.skillsBrowser.loadSkills();
     }
   }

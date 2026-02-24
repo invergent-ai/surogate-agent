@@ -1,33 +1,50 @@
-<div class="flex flex-col h-screen bg-white overflow-hidden">
+<div class="flex flex-col h-screen bg-white dark:bg-zinc-950 overflow-hidden transition-colors duration-300">
   <!-- Header -->
-  <header class="flex items-center gap-3 px-4 py-2.5 border-b border-gray-200 bg-white flex-none">
+  <header class="flex items-center gap-3 px-4 py-2.5 border-b border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 flex-none">
     <div class="flex items-center gap-2 flex-none">
       <div class="inline-flex items-center justify-center w-12 h-12 mb-3">
-        <img [src]="'assets/inv-logo-horiz-black.svg'" style="width: 150px;" alt=""/>
+        <img [src]="'assets/inv-logo-horiz-black.svg'" style="width: 150px;" class="dark:invert" alt=""/>
       </div>
-      <span class="text-sm font-semibold text-gray-700">Surogate Agent</span>
+      <span class="text-sm font-semibold text-gray-700 dark:text-zinc-300">Surogate Agent</span>
     </div>
 
     <div class="flex-1"></div>
 
     <!-- Session indicator -->
-    <span class="text-xs text-gray-400 font-mono hidden md:block">
+    <span class="text-xs text-gray-400 dark:text-zinc-500 font-mono hidden md:block">
       {{ sessionId().slice(0, 12) }}…
     </span>
 
     <button
       (click)="newSession()"
-      class="text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 hover:border-gray-300 transition-colors"
+      class="text-xs px-3 py-1.5 rounded-lg border border-gray-200 dark:border-zinc-700 text-gray-600 dark:text-zinc-400 hover:bg-gray-50 dark:hover:bg-zinc-800 hover:border-gray-300 dark:hover:border-zinc-600 transition-colors"
     >
       ✦ New session
     </button>
 
-    <span class="text-xs text-gray-400 hidden md:block">{{ userId }}</span>
+    <span class="text-xs text-gray-400 dark:text-zinc-500 hidden md:block">{{ userId }}</span>
+
+    <!-- Theme toggle -->
+    <button
+      (click)="theme.toggle()"
+      class="text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300 transition-colors p-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-zinc-800"
+      [title]="theme.isDark() ? 'Switch to light mode' : 'Switch to dark mode'"
+    >
+      @if (theme.isDark()) {
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707M17.657 17.657l-.707-.707M6.343 6.343l-.707-.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/>
+        </svg>
+      } @else {
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>
+        </svg>
+      }
+    </button>
 
     <!-- Settings button -->
     <button
       (click)="settingsOpen.set(true)"
-      class="text-gray-400 hover:text-gray-600 transition-colors p-1.5 rounded-md hover:bg-gray-100"
+      class="text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300 transition-colors p-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-zinc-800"
       title="Settings (model, API key)"
     >
       <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -38,7 +55,7 @@
 
     <button
       (click)="exit()"
-      class="text-xs text-gray-400 hover:text-gray-600 transition-colors px-2 py-1 rounded-md hover:bg-gray-100"
+      class="text-xs text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300 transition-colors px-2 py-1 rounded-md hover:bg-gray-100 dark:hover:bg-zinc-800"
     >Exit</button>
   </header>
 
@@ -47,7 +64,7 @@
   <!-- Body: files left + chat right -->
   <div class="flex flex-1 overflow-hidden">
     <!-- Left: file panels -->
-    <aside class="w-72 flex-none border-r border-gray-200 overflow-y-auto bg-gray-50 scrollbar-thin p-4 flex flex-col gap-6">
+    <aside class="w-72 flex-none border-r border-gray-200 dark:border-zinc-800 overflow-y-auto bg-gray-50 dark:bg-zinc-900 scrollbar-thin p-4 flex flex-col gap-6">
       <app-file-list
         title="Input files"
         [files]="inputFiles()"
@@ -58,7 +75,7 @@
         (refreshed)="refreshInputFiles()"
       />
 
-      <div class="border-t border-gray-200"></div>
+      <div class="border-t border-gray-200 dark:border-zinc-700"></div>
 
       <app-file-list
         title="Output files"

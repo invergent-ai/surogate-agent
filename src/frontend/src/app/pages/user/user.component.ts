@@ -1,4 +1,4 @@
-import { Component, ViewChild, signal } from '@angular/core';
+import { Component, ViewChild, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
 import { SessionsService } from '../../core/services/sessions.service';
@@ -8,6 +8,7 @@ import { FileListComponent } from '../../shared/components/file-list/file-list.c
 import { SettingsPanelComponent } from '../../shared/components/settings-panel/settings-panel.component';
 import { AuthService } from '../../core/services/auth.service';
 import { SettingsService } from '../../core/services/settings.service';
+import { ThemeService } from '../../core/services/theme.service';
 
 function uuid() {
   return crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -26,6 +27,8 @@ export class UserComponent {
   inputFiles   = signal<FileInfo[]>([]);
   outputFiles  = signal<FileInfo[]>([]);
   settingsOpen = signal(false);
+
+  readonly theme = inject(ThemeService);
 
   constructor(
     private auth: AuthService,

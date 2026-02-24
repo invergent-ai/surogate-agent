@@ -1,22 +1,22 @@
 @if (loading) {
-  <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-500">
+  <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-gray-100 dark:bg-zinc-700 text-gray-500 dark:text-zinc-400">
     <span class="animate-spin">⟳</span> validating
   </span>
 } @else if (result) {
   @if (result.valid && result.warnings.length === 0) {
-    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700">
+    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-green-100 dark:bg-green-950/50 text-green-700 dark:text-green-400">
       ✓ valid
     </span>
   } @else if (result.valid && result.warnings.length > 0) {
     <span
-      class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-yellow-100 text-yellow-700 cursor-help"
+      class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-yellow-100 dark:bg-yellow-950/50 text-yellow-700 dark:text-yellow-400 cursor-help"
       [title]="result.warnings.join('\n')"
     >
       ⚠ warnings
     </span>
   } @else {
     <span
-      class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-red-100 text-red-700 cursor-help"
+      class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-red-100 dark:bg-red-950/50 text-red-700 dark:text-red-400 cursor-help"
       [title]="result.errors.join('\n')"
     >
       ✕ invalid

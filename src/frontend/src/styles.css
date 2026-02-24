@@ -1,12 +1,37 @@
 @import "tailwindcss";
 @source "./app/**/*.{html,ts}";
 
+/* Dark mode: activate when <html> has class="dark" */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Brand colour palette — #FFBB33 (surogate.ai orange) */
+@theme {
+  --color-brand:     #FFBB33;
+  --color-brand-50:  #fffbeb;
+  --color-brand-100: #fef3c7;
+  --color-brand-200: #fde68a;
+  --color-brand-300: #fcd34d;
+  --color-brand-400: #fbbf24;
+  --color-brand-500: #f59e0b;
+  --color-brand-600: #d97706;
+  --color-brand-700: #b45309;
+}
+
 @layer base {
   html, body {
     height: 100%;
     margin: 0;
     padding: 0;
-    font-family: ui-sans-serif, system-ui, sans-serif;
+    font-family: "Segoe UI", system-ui, Roboto, Helvetica, Arial, sans-serif;
+  }
+
+  /* Signal to the browser which colour-scheme is active (affects
+     native UI: scrollbars, form controls, selection highlight) */
+  html {
+    color-scheme: light;
+  }
+  html.dark {
+    color-scheme: dark;
   }
 }
 
@@ -25,5 +50,12 @@
   .scrollbar-thin::-webkit-scrollbar-thumb {
     background-color: #d1d5db;
     border-radius: 2px;
+  }
+
+  .dark .scrollbar-thin {
+    scrollbar-color: #52525b transparent;
+  }
+  .dark .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: #52525b;
   }
 }

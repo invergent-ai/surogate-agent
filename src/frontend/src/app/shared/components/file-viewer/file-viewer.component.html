@@ -1,23 +1,23 @@
 <div class="flex flex-col h-full">
   @if (fileName) {
-    <div class="flex items-center justify-between px-3 py-1.5 bg-gray-100 border-b border-gray-200">
-      <span class="text-xs font-mono text-gray-600">{{ fileName }}</span>
+    <div class="flex items-center justify-between px-3 py-1.5 bg-gray-100 dark:bg-zinc-800 border-b border-gray-200 dark:border-zinc-700">
+      <span class="text-xs font-mono text-gray-600 dark:text-zinc-400">{{ fileName }}</span>
       @if (!readOnly && dirty()) {
         <div class="flex gap-2">
           <button
             (click)="reset()"
-            class="text-xs text-gray-500 hover:text-gray-700 transition-colors"
+            class="text-xs text-gray-500 dark:text-zinc-400 hover:text-gray-700 dark:hover:text-zinc-200 transition-colors"
           >Reset</button>
           <button
             (click)="save()"
-            class="text-xs bg-indigo-600 text-white px-2 py-0.5 rounded hover:bg-indigo-700 transition-colors"
+            class="text-xs bg-brand text-zinc-900 px-2 py-0.5 rounded hover:bg-brand-500 transition-colors"
           >Save</button>
         </div>
       }
     </div>
   }
   <textarea
-    class="flex-1 w-full p-3 font-mono text-sm text-gray-800 bg-white resize-none focus:outline-none"
+    class="flex-1 w-full p-3 font-mono text-sm text-gray-800 dark:text-zinc-200 bg-white dark:bg-zinc-900 resize-none focus:outline-none"
     [value]="editedContent()"
     [readOnly]="readOnly"
     (input)="onInput($any($event.target).value)"
