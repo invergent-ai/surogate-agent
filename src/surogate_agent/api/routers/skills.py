@@ -8,7 +8,7 @@ import shutil
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 
 from surogate_agent.api.deps import ServerSettings, settings_dep
@@ -72,9 +72,8 @@ def list_skills(
 ):
     registry = _build_registry(settings)
     if role == "developer":
-        infos = [s for s in registry.all_skills()]
         paths = registry.paths_for_role(Role.DEVELOPER)
-        infos = [s for s in registry.all_skills() if s.path in paths]
+        infos = [s for s in registry.all_skills() if s.path in paths and s.name != "skill-developer"]
     elif role == "user":
         paths = registry.paths_for_role(Role.USER)
         infos = [s for s in registry.all_skills() if s.path in paths]
@@ -271,7 +270,7 @@ def download_skill_file(
 async def upload_skill_file(
     name: str,
     file: str,
-    upload: UploadFile,
+    upload: UploadFile = File(...),
     force: bool = Query(False),
     settings: ServerSettings = Depends(settings_dep),
 ):

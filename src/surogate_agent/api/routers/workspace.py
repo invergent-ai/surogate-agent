@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import shutil
 
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 
 from surogate_agent.api.deps import ServerSettings, settings_dep
@@ -128,7 +128,7 @@ def download_workspace_file(
 @router.post("/{skill}/files", status_code=201)
 async def upload_workspace_file(
     skill: str,
-    upload: UploadFile,
+    upload: UploadFile = File(...),
     filename: str = Query("", description="Override destination filename"),
     settings: ServerSettings = Depends(settings_dep),
 ):

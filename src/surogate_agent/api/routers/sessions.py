@@ -4,7 +4,7 @@ Sessions router — /sessions
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 
 from surogate_agent.api.deps import ServerSettings, settings_dep
@@ -126,7 +126,7 @@ def download_session_file(
 @router.post("/{session_id}/files", status_code=201)
 async def upload_session_file(
     session_id: str,
-    upload: UploadFile,
+    upload: UploadFile = File(...),
     filename: str = Query("", description="Override destination filename"),
     settings: ServerSettings = Depends(settings_dep),
 ):
