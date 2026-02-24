@@ -55,7 +55,8 @@ export class ChatService {
             const lines = buffer.split('\n');
             buffer = lines.pop() ?? '';
 
-            for (const line of lines) {
+            for (const rawLine of lines) {
+              const line = rawLine.replace(/\r$/, ''); // normalize CRLF → LF
               if (line.startsWith('event:')) {
                 eventName = line.slice(6).trim();
               } else if (line.startsWith('data:')) {
