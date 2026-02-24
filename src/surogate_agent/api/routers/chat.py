@@ -279,10 +279,18 @@ async def chat_endpoint(
             content={"detail": "sse-starlette is not installed. Run: pip install sse-starlette"},
         )
 
-    # Enforce role and user_id from the authenticated user (ignore client-supplied values).
-    # Fall back to the user's stored model/api_key when the request doesn't supply them.
+    # Role resolution: prevent privilege escalation (user→developer) but allow
+    # a developer to explicitly downgrade to user for "Test as User" scenarios.
+    requested_role = req.role.lower()
+    if current_user.role == "developer":
+        # Developer may request either role; default to their own.
+        effective_role = requested_role if requested_role in ("developer", "user") else current_user.role
+    else:
+        # Non-developer accounts are always user — ignore any requested escalation.
+        effective_role = current_user.role
+
     authed_req = req.model_copy(update={
-        "role": current_user.role,
+        "role": effective_role,
         "user_id": current_user.username,
         "model": req.model or (current_user.model or ""),
         "api_key": req.api_key or (current_user.api_key or ""),

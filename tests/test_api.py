@@ -518,14 +518,28 @@ class TestChat:
         assert "done" in body
 
     @patch("surogate_agent.api.routers.chat.create_agent")
-    def test_chat_role_from_jwt_overrides_body(self, mock_create_agent, client):
-        # Role is always taken from the authenticated user (JWT), so any value
-        # in the request body is silently replaced — no error is returned.
+    def test_chat_invalid_role_falls_back_to_account_role(self, mock_create_agent, client):
+        # An unrecognised role value in the request body is silently ignored;
+        # the authenticated user's account role is used instead.
         mock_create_agent.return_value = self._mock_agent()
         resp = client.post("/api/chat", json={"message": "Hi", "role": "superuser"})
         assert resp.status_code == 200
-        body = resp.text
-        assert "done" in body  # request succeeds; mock user's role ("developer") is used
+        assert "done" in resp.text
+
+    @patch("surogate_agent.api.routers.chat.create_agent")
+    def test_chat_developer_can_downgrade_to_user_role(self, mock_create_agent, client):
+        # A developer account may request role="user" explicitly (for "Test as User").
+        # The request must succeed and use user-mode semantics.
+        mock_create_agent.return_value = self._mock_agent()
+        resp = client.post("/api/chat", json={"message": "Hi", "role": "user"})
+        assert resp.status_code == 200
+        assert "done" in resp.text
+        # Verify create_agent was called with Role.USER
+        from surogate_agent.core.roles import Role
+        call_kwargs = mock_create_agent.call_args
+        assert call_kwargs.kwargs.get("role") == Role.USER or (
+            call_kwargs.args and call_kwargs.args[0] == Role.USER
+        )
 
     @patch("surogate_agent.api.routers.chat.create_agent")
     def test_chat_developer_role(self, mock_create_agent, client, settings):

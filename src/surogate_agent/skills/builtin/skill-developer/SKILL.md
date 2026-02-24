@@ -79,51 +79,55 @@ Instructions the agent follows when this skill is active go here.
 Do not separate the metadata from the instructions. Do not create a companion JSON
 or YAML file. Write one `SKILL.md` that matches the template above, every time.
 
-### 4. Default to helper scripts — ask "can I write a script for this?" first
+### 4. Helper scripts are ALWAYS shipped — never ask, never treat them as optional
 
-**Before writing SKILL.md instructions, ask: "Can I encode any of this logic in a script?"**
-If the answer is yes, write the script. This is the default. Prose instructions to the
-agent are the fallback for things that genuinely cannot be scripted.
+If a working script exists in `workspace/<skill-name>/`, **copy it into
+`skills/<skill-name>/` and wire it up in SKILL.md. Do this unconditionally.**
+
+> **DO NOT:** "Dev/test artifact (not shipped as part of the skill): `workspace/.../extract.py`"
+> **DO NOT:** "If you want this skill to ship an executable script, tell me..."
+> **DO NOT:** "Does your agent support running a `run.py` in the skill directory?"
+> **DO NOT:** label any working script as a dev artifact, prototype, or optional.
+> **DO:** copy the script, wire it in SKILL.md, confirm in the summary.
+
+**You already know the runtime mechanism** — you do not need to ask the developer
+how the agent runs scripts. The answer is always:
+
+```
+execute("python skills/<skill-name>/script.py <args>")
+```
+
+This works in every agent session. `execute` is a first-class tool. Use it.
 
 **The rule:** if a task involves deterministic steps — parsing, extraction, filling a
-template, validation, conversion, calculations — those steps belong in a script, not
-in natural-language instructions. The script is shipped inside `skills/<skill-name>/`
-and SKILL.md tells the agent to run it.
+template, validation, conversion, calculations — those steps belong in a script.
+The script is part of the skill. It ships. The agent calls it via `execute`.
 
-**Wrong approach — making the agent reason through everything:**
+**Wrong — dumping logic into natural-language instructions:**
 ```
-# my-skill
 1. Open the .docx file and read all paragraphs.
-2. Look for lines that contain dates in the format DD/MM/YYYY.
-3. Extract the first date as the meeting date, the second as the deadline...
+2. Look for lines that contain dates in DD/MM/YYYY format.
+3. Extract the first date as the meeting date...
 ```
 
-**Right approach — script does the work, agent just orchestrates:**
+**Right — script does the work, SKILL.md just calls it:**
 ```
-# my-skill
-Run: execute("python skills/my-skill/extract.py <input_file> <output_json>")
-The script outputs a JSON file with all extracted fields.
-Read that JSON, then fill in the template using the values.
+Run: execute("python skills/my-skill/run.py <input_docx> <output_docx>")
+The script extracts all fields and fills the template. Check its exit code.
 ```
 
-**Practical guidelines:**
-- Write the script in Python (preferred) or shell into `skills/<skill-name>/`
-- The script must be self-contained: no external config, no hardcoded paths
-- Accept input paths as CLI arguments; write output to a path also passed as argument
-- Print a clear error message and exit non-zero on failure
-- SKILL.md calls it as: `execute("python skills/<name>/script.py <args>")`
+**Script requirements:**
+- Written into `skills/<skill-name>/` (not workspace)
+- Self-contained: no hardcoded paths, no external config files
+- Inputs and output paths passed as CLI arguments
+- Exits non-zero with a clear error message on failure
 - Include `execute` in the skill's `allowed-tools`
 
-**When a script is mandatory (not optional):**
-- Any document parsing (docx, PDF, CSV, JSON, XML)
-- Template filling / mail-merge style operations
-- Format conversion between file types
-- Field extraction and validation
-- Multi-step data transformation
-- Anything that would require more than 3 lines of prose instructions to describe
+**Mandatory for:** document parsing (docx, PDF, CSV, XML), template filling,
+format conversion, field extraction, multi-step data transformation, any logic
+requiring more than 3 lines of prose to describe.
 
-**Only skip the script when** the skill is purely conversational (no file I/O, no
-structured data) or when the logic is trivially simple (e.g. "summarise this text").
+**Skip only when** the skill is purely conversational with no file I/O.
 
 ---
 
@@ -216,11 +220,10 @@ write_file  workspace/<skill-name>/test-input.*   ← sample input if available
 This keeps your in-progress work separate from the finished skill.
 
 ### Step 3 — Plan
-Call `write_todos`. Always include a script step unless the skill is purely conversational:
-- [ ] Write helper script(s) to `skills/<name>/` (see Critical Behavior #4)
-- [ ] Draft SKILL.md body — keeps instructions short by delegating to the script
-- [ ] Write final SKILL.md to skills directory
-- [ ] Copy any binary assets from workspace to skills directory
+Call `write_todos`. If any logic can be scripted (almost always yes), include:
+- [ ] Copy or write helper script to `skills/<name>/` — NEVER leave it in workspace only
+- [ ] Write SKILL.md — instructions call the script via `execute("python skills/<name>/script.py ...")`
+- [ ] Copy binary assets from workspace to skills directory (templates, data files, etc.)
 - [ ] Confirm with developer
 
 ### Step 4 — Write the skill definition
