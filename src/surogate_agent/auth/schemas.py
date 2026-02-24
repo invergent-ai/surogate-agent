@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
+from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, EmailStr, field_validator
 
@@ -52,6 +53,12 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
 
 
+class UserSettingsUpdate(BaseModel):
+    """Payload for PATCH/PUT /auth/me — update per-user LLM settings."""
+    model: str
+    api_key: str
+
+
 class UserResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -61,3 +68,11 @@ class UserResponse(BaseModel):
     role: str
     is_active: bool
     created_at: datetime
+    # Per-user LLM configuration (empty string when not set)
+    model: str = ""
+    api_key: str = ""
+
+    @field_validator("model", "api_key", mode="before")
+    @classmethod
+    def _none_to_empty(cls, v: Optional[str]) -> str:
+        return v or ""

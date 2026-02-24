@@ -66,3 +66,16 @@ def authenticate_user(db: Session, username: str, password: str) -> User | None:
     if not verify_password(password, user.hashed_password):
         return None
     return user
+
+
+# ---------------------------------------------------------------------------
+# User settings
+# ---------------------------------------------------------------------------
+
+def update_user_settings(db: Session, user: User, model: str, api_key: str) -> User:
+    """Persist the user's preferred LLM model and API key."""
+    user.model = model.strip()
+    user.api_key = api_key.strip()
+    db.commit()
+    db.refresh(user)
+    return user

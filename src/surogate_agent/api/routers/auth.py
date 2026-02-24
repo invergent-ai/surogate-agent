@@ -3,7 +3,8 @@
 POST /auth/register  — create a new user account
 POST /auth/login     — authenticate and receive a JWT
 POST /auth/token     — OAuth2 password-form endpoint (for Swagger UI)
-GET  /auth/me        — return current user info
+GET  /auth/me        — return current user info (includes model + api_key)
+PUT  /auth/me        — update model and api_key for current user
 """
 
 from __future__ import annotations
@@ -20,12 +21,14 @@ from surogate_agent.auth.schemas import (
     RegisterRequest,
     TokenResponse,
     UserResponse,
+    UserSettingsUpdate,
 )
 from surogate_agent.auth.service import (
     authenticate_user,
     create_user,
     get_user_by_email,
     get_user_by_username,
+    update_user_settings,
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -78,5 +81,15 @@ def login_form(
 
 @router.get("/me", response_model=UserResponse)
 def me(current_user: User = Depends(get_current_user)) -> User:
-    """Return the currently authenticated user's profile."""
+    """Return the currently authenticated user's profile, including LLM settings."""
     return current_user
+
+
+@router.put("/me", response_model=UserResponse)
+def update_me(
+    body: UserSettingsUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> User:
+    """Update the current user's model and API key."""
+    return update_user_settings(db, current_user, body.model, body.api_key)

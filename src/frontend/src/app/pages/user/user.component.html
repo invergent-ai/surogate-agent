@@ -95,6 +95,7 @@
         [sessionId]="sessionId()"
         (sessionCreated)="onSessionCreated($event)"
         (filesChanged)="onFilesChanged($event)"
+        (settingsRequired)="settingsOpen.set(true)"
       />
     </main>
   </div>

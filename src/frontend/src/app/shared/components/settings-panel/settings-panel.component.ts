@@ -1,9 +1,10 @@
 import {
-  Component, Input, Output, EventEmitter, OnChanges, SimpleChanges
+  Component, Input, Output, EventEmitter, OnChanges, SimpleChanges, inject, signal
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { SettingsService } from '../../../core/services/settings.service';
+import { ToastService } from '../../../core/services/toast.service';
 
 export const PRESET_MODELS = [
   'claude-opus-4-6',
@@ -14,7 +15,6 @@ export const PRESET_MODELS = [
   'gpt-4.1',
   'o3',
   'o4-mini',
-  'gpt-5.2'
 ];
 
 @Component({
@@ -27,19 +27,23 @@ export class SettingsPanelComponent implements OnChanges {
   @Input() open = false;
   @Output() closed = new EventEmitter<void>();
 
+  private settings = inject(SettingsService);
+  private toast    = inject(ToastService);
+
   presetModels = PRESET_MODELS;
 
   draftModel  = '';
   draftApiKey = '';
   showKey     = false;
-
-  constructor(private settings: SettingsService) {}
+  saving      = signal(false);
+  saveError   = signal('');
 
   ngOnChanges(changes: SimpleChanges): void {
     if (changes['open']?.currentValue) {
       this.draftModel  = this.settings.model();
       this.draftApiKey = this.settings.apiKey();
       this.showKey     = false;
+      this.saveError.set('');
     }
   }
 
@@ -47,10 +51,25 @@ export class SettingsPanelComponent implements OnChanges {
     this.showKey = !this.showKey;
   }
 
+  get canSave(): boolean {
+    return !!this.draftModel.trim() && !!this.draftApiKey.trim() && !this.saving();
+  }
+
   save(): void {
-    this.settings.saveModel(this.draftModel);
-    this.settings.saveApiKey(this.draftApiKey);
-    this.closed.emit();
+    if (!this.canSave) return;
+    this.saving.set(true);
+    this.saveError.set('');
+    this.settings.saveSettings(this.draftModel.trim(), this.draftApiKey.trim()).subscribe({
+      next: () => {
+        this.saving.set(false);
+        this.toast.success('Settings saved');
+        this.closed.emit();
+      },
+      error: () => {
+        this.saving.set(false);
+        this.saveError.set('Failed to save. Please try again.');
+      },
+    });
   }
 
   cancel(): void {

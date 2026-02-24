@@ -22,6 +22,8 @@ export interface UserResponse {
   role: 'developer' | 'user';
   is_active: boolean;
   created_at: string;
+  model: string;
+  api_key: string;
 }
 
 export interface UserInfo {

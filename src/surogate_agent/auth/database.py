@@ -9,7 +9,7 @@ from __future__ import annotations
 import os
 from collections.abc import Generator
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 
@@ -39,11 +39,32 @@ def get_db() -> Generator[Session, None, None]:
         db.close()
 
 
+def _migrate_users_table() -> None:
+    """Add model/api_key columns to the users table if they don't exist.
+
+    SQLAlchemy's ``create_all`` only creates *new* tables; it never alters
+    existing ones.  This function handles forward-migration for deployments
+    that already have a ``users`` table without the new columns.
+    """
+    try:
+        cols = {c["name"] for c in inspect(engine).get_columns("users")}
+    except Exception:
+        return  # Table doesn't exist yet — create_all will handle it
+
+    with engine.begin() as conn:
+        if "model" not in cols:
+            conn.execute(text("ALTER TABLE users ADD COLUMN model VARCHAR(255) DEFAULT ''"))
+        if "api_key" not in cols:
+            conn.execute(text("ALTER TABLE users ADD COLUMN api_key VARCHAR(1000) DEFAULT ''"))
+
+
 def create_tables() -> None:
     """Create all tables defined via :class:`Base`.
 
     Called once at application startup.  Safe to call repeatedly — existing
-    tables are not modified.
+    tables are not modified by ``create_all``.  A lightweight column migration
+    is run first to bring existing databases up to date.
     """
     from surogate_agent.auth import models as _models  # noqa: F401 — registers models
+    _migrate_users_table()
     Base.metadata.create_all(bind=engine)

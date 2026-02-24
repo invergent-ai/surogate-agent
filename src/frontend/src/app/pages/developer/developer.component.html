@@ -83,13 +83,14 @@
         [skill]="activeSkill()"
         placeholder="Describe the skill you want to create or modify…"
         (skillDetected)="onSkillDetected($event)"
+        (settingsRequired)="settingsOpen.set(true)"
       />
     </main>
 
     <!-- Right: Workspace + Test as User -->
     <aside class="w-80 flex-none border-l border-gray-200 dark:border-zinc-800 flex flex-col overflow-y-auto bg-white dark:bg-zinc-950 scrollbar-thin p-3 gap-3">
       <app-workspace-panel [skill]="activeSkill()" />
-      <app-user-test-panel />
+      <app-user-test-panel (settingsRequired)="settingsOpen.set(true)" />
     </aside>
   </div>
 </div>

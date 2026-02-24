@@ -39,7 +39,10 @@ export class DeveloperComponent {
     private auth: AuthService,
     private router: Router,
     readonly settings: SettingsService,
-  ) {}
+  ) {
+    // Load user's stored model/api_key from the server on page init
+    this.settings.loadSettings().subscribe();
+  }
 
   get userId(): string { return this.auth.currentUser()?.username ?? ''; }
 

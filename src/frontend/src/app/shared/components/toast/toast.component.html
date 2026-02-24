@@ -1,0 +1,39 @@
+<div class="fixed top-4 right-4 z-[9999] flex flex-col gap-2 pointer-events-none" aria-live="polite">
+  @for (toast of toastService.toasts(); track trackById($index, toast)) {
+    <div
+      class="pointer-events-auto flex items-start gap-3 min-w-72 max-w-sm px-4 py-3 rounded-xl shadow-lg border text-sm transition-all duration-300"
+      [ngClass]="{
+        'bg-amber-50 dark:bg-amber-950/80 border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-100': toast.type === 'warning',
+        'bg-red-50 dark:bg-red-950/80 border-red-200 dark:border-red-800 text-red-900 dark:text-red-100': toast.type === 'error',
+        'bg-green-50 dark:bg-green-950/80 border-green-200 dark:border-green-800 text-green-900 dark:text-green-100': toast.type === 'success',
+        'bg-white dark:bg-zinc-800 border-gray-200 dark:border-zinc-700 text-gray-900 dark:text-zinc-100': toast.type === 'info'
+      }"
+    >
+      <!-- Icon -->
+      <span class="flex-none mt-0.5 text-base leading-none">
+        @if (toast.type === 'warning') { ⚠ }
+        @else if (toast.type === 'error') { ✕ }
+        @else if (toast.type === 'success') { ✓ }
+        @else { ℹ }
+      </span>
+
+      <!-- Message + optional action -->
+      <div class="flex-1 min-w-0">
+        <p class="leading-snug">{{ toast.message }}</p>
+        @if (toast.action) {
+          <button
+            (click)="toast.action!.callback(); toastService.dismiss(toast.id)"
+            class="mt-1.5 text-xs font-semibold underline underline-offset-2 hover:no-underline transition-all"
+          >{{ toast.action.label }}</button>
+        }
+      </div>
+
+      <!-- Dismiss -->
+      <button
+        (click)="toastService.dismiss(toast.id)"
+        class="flex-none text-current opacity-50 hover:opacity-100 transition-opacity leading-none text-base"
+        aria-label="Dismiss"
+      >×</button>
+    </div>
+  }
+</div>

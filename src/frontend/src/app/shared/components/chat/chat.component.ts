@@ -1,11 +1,13 @@
 import {
-  Component, Input, Output, EventEmitter, signal, computed,
-  ViewChild, ElementRef, OnDestroy, effect
+  Component, Input, Output, EventEmitter, signal,
+  ViewChild, ElementRef, OnDestroy, effect, inject
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Subscription } from 'rxjs';
 import { ChatService } from '../../../core/services/chat.service';
+import { SettingsService } from '../../../core/services/settings.service';
+import { ToastService } from '../../../core/services/toast.service';
 import {
   ChatMessage, MessageBlock, SseEvent, ToolBlock
 } from '../../../core/models/chat.models';
@@ -32,20 +34,24 @@ export class ChatComponent implements OnDestroy {
   @Input() compact = false;
   @Input() placeholder = 'Type a message…';
 
-  @Output() sessionCreated = new EventEmitter<string>();
-  @Output() skillDetected = new EventEmitter<string>();
-  @Output() filesChanged = new EventEmitter<string[]>();
+  @Output() sessionCreated   = new EventEmitter<string>();
+  @Output() skillDetected    = new EventEmitter<string>();
+  @Output() filesChanged     = new EventEmitter<string[]>();
+  /** Emitted when chat is attempted but model/API key are not configured. */
+  @Output() settingsRequired = new EventEmitter<void>();
 
   messages = signal<ChatMessage[]>([]);
   streaming = signal(false);
   currentSessionId = signal('');
   inputText = signal('');
 
+  private chatService = inject(ChatService);
+  private settings    = inject(SettingsService);
+  private toast       = inject(ToastService);
+
   private sub?: Subscription;
 
-  constructor(
-    private chatService: ChatService,
-  ) {
+  constructor() {
     effect(() => {
       // Keep sessionId in sync when parent updates it
       if (this.sessionId) this.currentSessionId.set(this.sessionId);
@@ -55,6 +61,16 @@ export class ChatComponent implements OnDestroy {
   send() {
     const text = this.inputText().trim();
     if (!text || this.streaming()) return;
+
+    // Guard: settings must be configured before chatting
+    if (!this.settings.isConfigured()) {
+      this.toast.warning(
+        'Model and API key are required. Open ⚙ Settings to configure.',
+        { label: 'Open Settings', callback: () => this.settingsRequired.emit() }
+      );
+      this.settingsRequired.emit();
+      return;
+    }
 
     this.inputText.set('');
     this.messages.update(msgs => [

@@ -1,4 +1,4 @@
-import { Component, Input, signal, OnChanges, SimpleChanges } from '@angular/core';
+import { Component, Input, Output, EventEmitter, signal, OnChanges, SimpleChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { SessionsService } from '../../../../core/services/sessions.service';
 import { FileInfo } from '../../../../core/models/session.models';
@@ -16,6 +16,8 @@ function uuid() {
   templateUrl: './user-test-panel.component.html',
 })
 export class UserTestPanelComponent {
+  @Output() settingsRequired = new EventEmitter<void>();
+
   expanded = signal(false);
   sessionId = signal(uuid());
   inputFiles  = signal<FileInfo[]>([]);

@@ -54,6 +54,7 @@
         placeholder="Test as user…"
         (sessionCreated)="onSessionCreated($event)"
         (filesChanged)="onFilesChanged($event)"
+        (settingsRequired)="settingsRequired.emit()"
       />
     </div>
   }

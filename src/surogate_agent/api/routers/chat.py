@@ -274,8 +274,14 @@ async def chat_endpoint(
             content={"detail": "sse-starlette is not installed. Run: pip install sse-starlette"},
         )
 
-    # Enforce role and user_id from the authenticated user (ignore client-supplied values)
-    authed_req = req.model_copy(update={"role": current_user.role, "user_id": current_user.username})
+    # Enforce role and user_id from the authenticated user (ignore client-supplied values).
+    # Fall back to the user's stored model/api_key when the request doesn't supply them.
+    authed_req = req.model_copy(update={
+        "role": current_user.role,
+        "user_id": current_user.username,
+        "model": req.model or (current_user.model or ""),
+        "api_key": req.api_key or (current_user.api_key or ""),
+    })
 
     async def generator():
         async for event in _stream_chat(authed_req, settings):
