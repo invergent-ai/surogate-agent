@@ -12,6 +12,22 @@ import { SettingsService } from '../../core/services/settings.service';
 import { ThemeService } from '../../core/services/theme.service';
 import { BreakpointService } from '../../core/services/breakpoint.service';
 
+/** Snap options shown in the panel header. */
+const DESKTOP_SNAPS = [
+  { value: '18rem', label: 'Default' },
+  { value: '50vw',  label: 'Wide' },
+] as const;
+
+const DESKTOP_SNAPS_RIGHT = [
+  { value: '20rem', label: 'Default' },
+  { value: '50vw',  label: 'Wide' },
+] as const;
+
+const MOBILE_SNAPS = [
+  { value: '50vw',  label: '50%' },
+  { value: '100vw', label: '100%' },
+] as const;
+
 @Component({
   selector: 'app-developer',
   standalone: true,
@@ -31,12 +47,18 @@ export class DeveloperComponent {
   @ViewChild(SkillsBrowserComponent) skillsBrowser!: SkillsBrowserComponent;
   @ViewChild(ChatComponent) devChat!: ChatComponent;
 
-  activeSkill     = signal('');
-  settingsOpen    = signal(false);
-  leftDrawerOpen  = signal(false);
-  rightDrawerOpen = signal(false);
-  leftSnapPct     = signal(50);
-  rightSnapPct    = signal(50);
+  readonly DESKTOP_SNAPS       = DESKTOP_SNAPS;
+  readonly DESKTOP_SNAPS_RIGHT = DESKTOP_SNAPS_RIGHT;
+  readonly MOBILE_SNAPS        = MOBILE_SNAPS;
+  readonly LEFT_DEFAULT        = '18rem';
+  readonly RIGHT_DEFAULT       = '20rem';
+
+  activeSkill = signal('');
+  settingsOpen = signal(false);
+
+  /** CSS width of each panel. '0px' = closed. */
+  leftPanelWidth  = signal<string>('18rem');
+  rightPanelWidth = signal<string>('20rem');
 
   readonly theme = inject(ThemeService);
   readonly bp    = inject(BreakpointService);
@@ -46,20 +68,45 @@ export class DeveloperComponent {
     private router: Router,
     readonly settings: SettingsService,
   ) {
+    // Start closed on mobile
+    if (this.bp.isMobile()) {
+      this.leftPanelWidth.set('0px');
+      this.rightPanelWidth.set('0px');
+    }
+
     this.settings.loadSettings().subscribe();
-    // Auto-close drawers when viewport widens to desktop
+
+    // On breakpoint change: close on mobile, restore on desktop.
+    // Only read bp.isMobile() — reading panel widths here would cause the
+    // effect to re-run every time the user manually toggles a panel.
     effect(() => {
-      if (!this.bp.isMobile()) {
-        this.leftDrawerOpen.set(false);
-        this.rightDrawerOpen.set(false);
+      if (this.bp.isMobile()) {
+        this.leftPanelWidth.set('0px');
+        this.rightPanelWidth.set('0px');
+      } else {
+        this.leftPanelWidth.set(this.LEFT_DEFAULT);
+        this.rightPanelWidth.set(this.RIGHT_DEFAULT);
       }
     });
   }
 
   get userId(): string { return this.auth.currentUser()?.username ?? ''; }
 
-  toggleLeftDrawer()  { this.leftDrawerOpen.update(v => !v); }
-  toggleRightDrawer() { this.rightDrawerOpen.update(v => !v); }
+  toggleLeftPanel() {
+    this.leftPanelWidth.update(w =>
+      w === '0px'
+        ? (this.bp.isMobile() ? '50vw' : this.LEFT_DEFAULT)
+        : '0px'
+    );
+  }
+
+  toggleRightPanel() {
+    this.rightPanelWidth.update(w =>
+      w === '0px'
+        ? (this.bp.isMobile() ? '50vw' : this.RIGHT_DEFAULT)
+        : '0px'
+    );
+  }
 
   onActiveSkillChange(name: string) {
     this.activeSkill.set(name);
