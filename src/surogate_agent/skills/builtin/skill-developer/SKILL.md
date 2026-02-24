@@ -68,6 +68,10 @@ agent to `read_file("prompt.md")` etc.
 
 ### SKILL.md format
 
+**SKILL.md must always begin with a YAML frontmatter block.** The `---` delimiters
+and the fields inside them are not optional — without them the skill is invisible to
+the registry and will never load.  The body (instructions) comes after the closing `---`.
+
 ```markdown
 ---
 name: <kebab-case-name>
@@ -81,6 +85,9 @@ allowed-tools: tool_name other_tool   # space-delimited string
 
 Instructions the agent follows when this skill is active.
 ```
+
+The first character of SKILL.md must be `-` (the start of `---`).  Never start the
+file with a heading, blank line, comment, or any other content before the frontmatter.
 
 ---
 
@@ -197,6 +204,11 @@ which skills are currently in progress.
 
 ## Rules & Constraints
 
+- **Every SKILL.md must start with the YAML frontmatter block** (`---` … `---`).
+  A skill file that starts with a heading, blank line, or body text will fail to
+  load — the registry will silently skip it and it will never appear to users or
+  the agent.  Always write the `---` delimiters first, `name` and `description`
+  inside them, then the body after the closing `---`.
 - **Never** write skill definition files into `workspace/` or `sessions/`.
 - **Never** write developer working files into `skills/`.
 - **Never** create a skill in the builtin directory (`skills/builtin/`).
@@ -235,8 +247,21 @@ Agent:
   [write_todos]
   [write_file: workspace/csv-to-report/notes.md]    ← dev scratch
   [write_file: workspace/csv-to-report/test.csv]    ← test data
-  [write_file: skills/csv-to-report/SKILL.md]       ← skill definition
+  [write_file: skills/csv-to-report/SKILL.md]       ← skill definition (starts with ---)
   [write_file: skills/csv-to-report/prompt.md]      ← finalized template
+
+  skills/csv-to-report/SKILL.md content:
+  ---
+  name: csv-to-report
+  description: Takes a CSV file as input and produces a structured markdown report with summary and table.
+  version: 0.1.0
+  allowed-tools: read_file write_file
+  ---
+
+  # csv-to-report
+
+  When this skill is active, read the user's CSV from their session workspace,
+  analyse it, and write a markdown report with a summary section and a data table.
 
   Skill 'csv-to-report' created.
   Skill files : skills/csv-to-report/
