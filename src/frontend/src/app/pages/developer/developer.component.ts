@@ -53,8 +53,9 @@ export class DeveloperComponent {
   readonly LEFT_DEFAULT        = '18rem';
   readonly RIGHT_DEFAULT       = '20rem';
 
-  activeSkill = signal('');
-  settingsOpen = signal(false);
+  activeSkill      = signal('');
+  settingsOpen     = signal(false);
+  chatHasMessages  = signal(false);
 
   /** CSS width of each panel. '0px' = closed. */
   leftPanelWidth  = signal<string>('18rem');

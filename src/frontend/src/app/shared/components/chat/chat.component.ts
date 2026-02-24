@@ -40,8 +40,9 @@ export class ChatComponent implements OnDestroy {
   @Output() sessionCreated   = new EventEmitter<string>();
   @Output() skillDetected    = new EventEmitter<string>();
   @Output() filesChanged     = new EventEmitter<string[]>();
-  /** Emitted when chat is attempted but model/API key are not configured. */
   @Output() settingsRequired = new EventEmitter<void>();
+  /** Emitted with true when the first message is added, false when messages are cleared. */
+  @Output() hasMessages      = new EventEmitter<boolean>();
 
   messages = signal<ChatMessage[]>([]);
   streaming = signal(false);
@@ -72,6 +73,9 @@ export class ChatComponent implements OnDestroy {
     effect(() => {
       // Keep sessionId in sync when parent updates it
       if (this.sessionId) this.currentSessionId.set(this.sessionId);
+    });
+    effect(() => {
+      this.hasMessages.emit(this.messages().length > 0);
     });
   }
 
