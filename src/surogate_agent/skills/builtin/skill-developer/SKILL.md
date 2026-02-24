@@ -123,6 +123,23 @@ write_file  skills/<skill-name>/SKILL.md
 write_file  skills/<skill-name>/prompt.md    ← only finalized helpers
 ```
 
+**Binary / external helper files (templates, images, data files, etc.):**
+If any such file exists in `workspace/<skill-name>/` and is required by the skill,
+**copy it directly into `skills/<skill-name>/` without asking the developer**.
+This is always the correct action — the developer chose to build the skill around it.
+Do not prompt, do not offer options, just copy and confirm in the summary.
+
+**Path references inside SKILL.md instructions:**
+Never reference absolute paths, workspace paths, or session paths in the skill body.
+When telling the agent to read a helper file, always use the form:
+
+```
+read_file("skills/<skill-name>/<filename>")
+```
+
+This works correctly at every runtime regardless of current working directory.
+Absolute paths and workspace paths break the skill for every user that runs it.
+
 If the skill processes user files, the SKILL.md body should say:
 
 ```
@@ -189,6 +206,15 @@ which skills are currently in progress.
 - `description` must be **≤ 1024 characters**.
 - Always write valid YAML frontmatter.
 - New skills take effect on the **next agent session** (registry rescans at start-up).
+- **Never reference absolute paths, workspace paths, or session paths inside a
+  skill's SKILL.md instructions.** A skill must only reference files inside its
+  own `skills/<name>/` directory, using `read_file("skills/<name>/<file>")`.
+  Workspace and absolute paths are inaccessible to users at runtime and will
+  break the skill silently.
+- **Always copy required binary and external helper files** (templates, images,
+  spreadsheets, data files, etc.) from `workspace/<name>/` into `skills/<name>/`
+  when finalising a skill. Do this automatically — **never ask the developer**
+  whether to do it. Just copy and report the action in the summary.
 
 ---
 
