@@ -29,18 +29,28 @@ export class WorkspaceService {
   }
 
   downloadFile(skill: string, fileName: string): Observable<Blob> {
-    return this.http.get(this.url(`/${skill}/files/${fileName}`), { responseType: 'blob' });
+    return this.http.get(this.url(`/${skill}/files/${encodeURIComponent(fileName)}`), { responseType: 'blob' });
+  }
+
+  readFile(skill: string, fileName: string): Observable<string> {
+    return this.http.get(this.url(`/${skill}/files/${encodeURIComponent(fileName)}`), { responseType: 'text' });
   }
 
   uploadFile(skill: string, file: File): Observable<unknown> {
     const form = new FormData();
-    form.append('file', file, file.name);
+    form.append('upload', file, file.name);
     return this.http.post(this.url(`/${skill}/files`), form, {
       params: { filename: file.name },
     });
   }
 
+  saveTextFile(skill: string, fileName: string, content: string): Observable<unknown> {
+    const blob = new Blob([content], { type: 'text/plain' });
+    const file = new File([blob], fileName);
+    return this.uploadFile(skill, file);
+  }
+
   deleteFile(skill: string, fileName: string): Observable<{ deleted: string }> {
-    return this.http.delete<{ deleted: string }>(this.url(`/${skill}/files/${fileName}`));
+    return this.http.delete<{ deleted: string }>(this.url(`/${skill}/files/${encodeURIComponent(fileName)}`));
   }
 }

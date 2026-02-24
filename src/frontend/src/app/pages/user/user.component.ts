@@ -107,9 +107,15 @@ export class UserComponent {
     this.sessionsService.listFiles(this.sessionId()).subscribe(f => this.outputFiles.set(f));
   }
 
-  downloadFile = (name: string) => this.sessionsService.downloadFile(this.sessionId(), name);
-  uploadFile   = (file: File)   => this.sessionsService.uploadFile(this.sessionId(), file);
-  deleteFile   = (name: string) => this.sessionsService.deleteFile(this.sessionId(), name);
+  expandLeftPanel() {
+    this.leftPanelWidth.set(this.bp.isMobile() ? '100vw' : '50vw');
+  }
+
+  downloadFile = (name: string)                  => this.sessionsService.downloadFile(this.sessionId(), name);
+  uploadFile   = (file: File)                    => this.sessionsService.uploadFile(this.sessionId(), file);
+  deleteFile   = (name: string)                  => this.sessionsService.deleteFile(this.sessionId(), name);
+  readFile     = (name: string)                  => this.sessionsService.readFile(this.sessionId(), name);
+  saveFile     = (name: string, content: string) => this.sessionsService.saveTextFile(this.sessionId(), name, content);
 
   exit() {
     this.auth.logout();

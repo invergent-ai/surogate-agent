@@ -19,6 +19,7 @@ import { FileViewerComponent } from '../../../../shared/components/file-viewer/f
 })
 export class SkillsBrowserComponent implements OnInit {
   @Output() skillSelected = new EventEmitter<string>();
+  @Output() fileOpened    = new EventEmitter<void>();
 
   skills = signal<SkillListItem[]>([]);
   filter = signal('');
@@ -108,5 +109,15 @@ export class SkillsBrowserComponent implements OnInit {
   deleteFile = (name: string) => {
     const sk = this.selectedSkill()!;
     return this.skillsService.deleteFile(sk.name, name);
+  };
+
+  readFile = (name: string) => {
+    const sk = this.selectedSkill()!;
+    return this.skillsService.readFile(sk.name, name);
+  };
+
+  saveHelperFile = (name: string, content: string) => {
+    const sk = this.selectedSkill()!;
+    return this.skillsService.saveTextFile(sk.name, name, content);
   };
 }

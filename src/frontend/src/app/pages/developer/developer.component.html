@@ -153,6 +153,7 @@
         <div class="flex-1 overflow-hidden min-h-0">
           <app-skills-browser
             (skillSelected)="onSkillSelectedFromBrowser($event)"
+            (fileOpened)="expandLeftPanel()"
           />
         </div>
       </div>
@@ -229,8 +230,8 @@
 
         <!-- Workspace + Test panels -->
         <div class="flex-1 overflow-y-auto scrollbar-thin p-3 flex flex-col gap-3">
-          <app-workspace-panel [skill]="activeSkill()" />
-          <app-user-test-panel (settingsRequired)="settingsOpen.set(true)" />
+          <app-workspace-panel [skill]="activeSkill()" (fileOpened)="expandRightPanel()" />
+          <app-user-test-panel (settingsRequired)="settingsOpen.set(true)" (fileOpened)="expandRightPanel()" />
         </div>
       </div>
     </aside>

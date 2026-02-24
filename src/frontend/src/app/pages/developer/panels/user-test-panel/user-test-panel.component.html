@@ -32,7 +32,10 @@
         [uploadFn]="uploadFile"
         [downloadFn]="downloadFile"
         [deleteFn]="deleteFile"
+        [viewFn]="readFile"
+        [saveFn]="saveFile"
         (refreshed)="refreshInputFiles()"
+        (fileOpened)="fileOpened.emit()"
       />
       <app-file-list
         title="Output files"
@@ -41,7 +44,10 @@
         [allowUpload]="false"
         [downloadFn]="downloadFile"
         [deleteFn]="deleteFile"
+        [viewFn]="readFile"
+        [saveFn]="saveFile"
         (refreshed)="refreshOutputFiles()"
+        (fileOpened)="fileOpened.emit()"
       />
     </div>
 

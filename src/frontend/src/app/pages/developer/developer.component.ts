@@ -129,6 +129,14 @@ export class DeveloperComponent {
     if (this.devChat) this.devChat.clearMessages();
   }
 
+  expandLeftPanel() {
+    this.leftPanelWidth.set(this.bp.isMobile() ? '100vw' : '50vw');
+  }
+
+  expandRightPanel() {
+    this.rightPanelWidth.set(this.bp.isMobile() ? '100vw' : '50vw');
+  }
+
   exit() {
     this.auth.logout();
     this.router.navigate(['/login']);

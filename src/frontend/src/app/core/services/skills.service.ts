@@ -48,11 +48,21 @@ export class SkillsService {
 
   uploadFile(skillName: string, file: File, force = false): Observable<unknown> {
     const form = new FormData();
-    form.append('file', file);
+    form.append('upload', file);
     return this.http.post(
       this.url(`/${skillName}/files/${file.name}`) + (force ? '?force=true' : ''),
       form
     );
+  }
+
+  readFile(skillName: string, fileName: string): Observable<string> {
+    return this.http.get(this.url(`/${skillName}/files/${encodeURIComponent(fileName)}`), { responseType: 'text' });
+  }
+
+  saveTextFile(skillName: string, fileName: string, content: string): Observable<unknown> {
+    const blob = new Blob([content], { type: 'text/plain' });
+    const file = new File([blob], fileName);
+    return this.uploadFile(skillName, file, true);
   }
 
   deleteFile(skillName: string, fileName: string): Observable<{ deleted: string }> {

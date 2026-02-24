@@ -17,6 +17,7 @@ function uuid() {
 })
 export class UserTestPanelComponent {
   @Output() settingsRequired = new EventEmitter<void>();
+  @Output() fileOpened       = new EventEmitter<void>();
 
   expanded = signal(false);
   sessionId = signal(uuid());
@@ -48,7 +49,9 @@ export class UserTestPanelComponent {
     this.sessionsService.listFiles(this.sessionId()).subscribe(f => this.outputFiles.set(f));
   }
 
-  downloadFile = (name: string) => this.sessionsService.downloadFile(this.sessionId(), name);
-  uploadFile   = (file: File)   => this.sessionsService.uploadFile(this.sessionId(), file);
-  deleteFile   = (name: string) => this.sessionsService.deleteFile(this.sessionId(), name);
+  downloadFile = (name: string)                  => this.sessionsService.downloadFile(this.sessionId(), name);
+  uploadFile   = (file: File)                    => this.sessionsService.uploadFile(this.sessionId(), file);
+  deleteFile   = (name: string)                  => this.sessionsService.deleteFile(this.sessionId(), name);
+  readFile     = (name: string)                  => this.sessionsService.readFile(this.sessionId(), name);
+  saveFile     = (name: string, content: string) => this.sessionsService.saveTextFile(this.sessionId(), name, content);
 }

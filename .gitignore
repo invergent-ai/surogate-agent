@@ -19,3 +19,5 @@ htmlcov/
 .idea/
 /src/frontend/surogate.db
 /surogate.db
+/sessions/
+/workspace/

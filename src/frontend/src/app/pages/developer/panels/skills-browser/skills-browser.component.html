@@ -89,7 +89,10 @@
           [downloadFn]="downloadFile"
           [uploadFn]="uploadFile"
           [deleteFn]="deleteFile"
+          [viewFn]="readFile"
+          [saveFn]="saveHelperFile"
           (refreshed)="refreshFiles()"
+          (fileOpened)="fileOpened.emit()"
         />
       </div>
     </div>

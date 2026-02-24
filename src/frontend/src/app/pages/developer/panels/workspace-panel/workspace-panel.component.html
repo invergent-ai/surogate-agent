@@ -32,7 +32,10 @@
           [downloadFn]="download"
           [uploadFn]="upload"
           [deleteFn]="delete"
+          [viewFn]="readFile"
+          [saveFn]="saveFile"
           (refreshed)="loadFiles()"
+          (fileOpened)="fileOpened.emit()"
         />
       }
     </div>
