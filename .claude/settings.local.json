@@ -29,7 +29,8 @@
       "Bash(grep ^Version::*)",
       "WebFetch(domain:surogate.ai)",
       "Bash(wc:*)",
-      "Bash(npm run:*)"
+      "Bash(npm run:*)",
+      "Bash(find:*)"
     ]
   }
 }

@@ -7,7 +7,7 @@ description: >
   list available skills, or understand the skill format.
 role-restriction: developer
 version: 0.1.0
-allowed-tools: write_file edit_file read_file ls glob write_todos
+allowed-tools: write_file edit_file read_file ls glob write_todos execute
 ---
 
 # Skill Developer — Instructions
@@ -16,6 +16,114 @@ You are equipped with the **skill-developer meta-skill**.
 Your job is to help the developer author, iterate on, and manage agent skills
 through natural conversation.  Multiple skills may be developed in parallel;
 each one has its own isolated locations for definition files and working files.
+
+---
+
+## CRITICAL BEHAVIORS — read before anything else
+
+These are absolute, unconditional rules. They override any other instinct or
+default behavior. There are no exceptions.
+
+### 1. ALWAYS copy helper files silently — NEVER ask
+
+When a skill requires any binary or external file (template, image, spreadsheet,
+data file, etc.) that exists in `workspace/<skill-name>/`, you **MUST copy it
+into `skills/<skill-name>/` immediately and without asking**.
+
+> **DO NOT:** "Would you like me to copy `template.docx` into the skill folder?"
+> **DO NOT:** "Should I bundle the template with the skill?"
+> **DO NOT:** offer any choice, ask any question, or mention the copy as optional.
+> **DO:** use `execute("cp workspace/<skill-name>/<file> skills/<skill-name>/<file>")` to copy it immediately, then mention it as a done action in your summary.
+
+The developer built the skill around the file. Asking permission is wrong. Copy it.
+Use `execute` with `cp` to copy binary files (`.docx`, images, etc.) — `write_file` is text-only.
+
+### 2. NEVER reference workspace, absolute, or session paths in SKILL.md
+
+The SKILL.md body will be read at runtime by an agent that has no access to
+`workspace/`, absolute filesystem paths, or `sessions/`. Any such path in
+the instructions will silently break the skill for every user.
+
+> **DO NOT:** `read_file("/workspace/generate-mandate/template.docx")`
+> **DO NOT:** `read_file("workspace/generate-mandate/template.docx")`
+> **DO:** `read_file("skills/<skill-name>/template.docx")`
+
+The only valid path form inside a SKILL.md body is `skills/<skill-name>/<file>`.
+
+### 3. SKILL.md is the ONLY skill definition file — copy this exact structure
+
+There is **no** `skill.json`, `skill.yaml`, `metadata.json`, or any other config
+file. One file does everything. `SKILL.md` holds both the skill metadata and the
+agent instructions in a single file.
+
+Every `SKILL.md` you write must begin **exactly** like this:
+
+```
+---
+name: my-skill-name
+description: One or two sentence description of what this skill does.
+version: 0.1.0
+allowed-tools: read_file write_file execute
+---
+
+# My Skill Name
+
+Instructions the agent follows when this skill is active go here.
+```
+
+- The very first character of the file must be `-` (the start of `---`)
+- `name`, `description`, and `version` are required fields inside the `---` block
+- The instructions (heading + body) come **after** the closing `---`
+- A file that does not follow this exact structure will not be loaded by the registry
+
+Do not separate the metadata from the instructions. Do not create a companion JSON
+or YAML file. Write one `SKILL.md` that matches the template above, every time.
+
+### 4. Default to helper scripts — ask "can I write a script for this?" first
+
+**Before writing SKILL.md instructions, ask: "Can I encode any of this logic in a script?"**
+If the answer is yes, write the script. This is the default. Prose instructions to the
+agent are the fallback for things that genuinely cannot be scripted.
+
+**The rule:** if a task involves deterministic steps — parsing, extraction, filling a
+template, validation, conversion, calculations — those steps belong in a script, not
+in natural-language instructions. The script is shipped inside `skills/<skill-name>/`
+and SKILL.md tells the agent to run it.
+
+**Wrong approach — making the agent reason through everything:**
+```
+# my-skill
+1. Open the .docx file and read all paragraphs.
+2. Look for lines that contain dates in the format DD/MM/YYYY.
+3. Extract the first date as the meeting date, the second as the deadline...
+```
+
+**Right approach — script does the work, agent just orchestrates:**
+```
+# my-skill
+Run: execute("python skills/my-skill/extract.py <input_file> <output_json>")
+The script outputs a JSON file with all extracted fields.
+Read that JSON, then fill in the template using the values.
+```
+
+**Practical guidelines:**
+- Write the script in Python (preferred) or shell into `skills/<skill-name>/`
+- The script must be self-contained: no external config, no hardcoded paths
+- Accept input paths as CLI arguments; write output to a path also passed as argument
+- Print a clear error message and exit non-zero on failure
+- SKILL.md calls it as: `execute("python skills/<name>/script.py <args>")`
+- Include `execute` in the skill's `allowed-tools`
+
+**When a script is mandatory (not optional):**
+- Any document parsing (docx, PDF, CSV, JSON, XML)
+- Template filling / mail-merge style operations
+- Format conversion between file types
+- Field extraction and validation
+- Multi-step data transformation
+- Anything that would require more than 3 lines of prose instructions to describe
+
+**Only skip the script when** the skill is purely conversational (no file I/O, no
+structured data) or when the logic is trivially simple (e.g. "summarise this text").
 
 ---
 
@@ -58,36 +166,28 @@ agent should read when the skill is active.
 ```
 skills/<skill-name>/
 ├── SKILL.md           ← required: frontmatter + agent instructions
+├── process.py         ← recommended: helper script for heavy lifting
 ├── prompt.md          ← optional: reusable prompt template
 ├── schema.json        ← optional: expected input/output structure
+├── template.docx      ← optional: binary asset shipped with the skill
 └── config.yaml        ← optional: tunable parameters
 ```
 
-Helper files are never loaded automatically — SKILL.md explicitly tells the
-agent to `read_file("prompt.md")` etc.
+Helper files are never loaded automatically — SKILL.md explicitly instructs the
+agent to `read_file("skills/<name>/prompt.md")` or
+`execute("python skills/<name>/process.py ...")` etc.
+
+**Prefer scripts over pure reasoning.** If the skill involves data extraction,
+format conversion, or any repeatable logic, write a helper script and ship it.
 
 ### SKILL.md format
 
-**SKILL.md must always begin with a YAML frontmatter block.** The `---` delimiters
-and the fields inside them are not optional — without them the skill is invisible to
-the registry and will never load.  The body (instructions) comes after the closing `---`.
+See **Critical Behavior #3** above for the required file structure and template.
+All fields, the exact `---` delimiters, and the ordering are mandatory.
 
-```markdown
----
-name: <kebab-case-name>
-description: <one or two sentences, max 1024 chars>
-role-restriction: developer | user   # omit to allow all roles
-version: 0.1.0
-allowed-tools: tool_name other_tool   # space-delimited string
----
-
-# Skill Title
-
-Instructions the agent follows when this skill is active.
-```
-
-The first character of SKILL.md must be `-` (the start of `---`).  Never start the
-file with a heading, blank line, comment, or any other content before the frontmatter.
+Optional metadata fields (add inside the `---` block as needed):
+- `role-restriction: developer` — limits the skill to developer sessions only (omit to allow all roles)
+- `allowed-tools: tool_a tool_b` — space-delimited list of tools the skill may use
 
 ---
 
@@ -116,24 +216,30 @@ write_file  workspace/<skill-name>/test-input.*   ← sample input if available
 This keeps your in-progress work separate from the finished skill.
 
 ### Step 3 — Plan
-Call `write_todos`:
-- [ ] Draft SKILL.md body (iterate in workspace if complex)
+Call `write_todos`. Always include a script step unless the skill is purely conversational:
+- [ ] Write helper script(s) to `skills/<name>/` (see Critical Behavior #4)
+- [ ] Draft SKILL.md body — keeps instructions short by delegating to the script
 - [ ] Write final SKILL.md to skills directory
-- [ ] Write finalized helper files to skills directory
+- [ ] Copy any binary assets from workspace to skills directory
 - [ ] Confirm with developer
 
 ### Step 4 — Write the skill definition
-Once the draft is ready, write to the **skills** directory (not workspace):
+Write to the **skills** directory in this order:
 
 ```
-write_file  skills/<skill-name>/SKILL.md
-write_file  skills/<skill-name>/prompt.md    ← only finalized helpers
+write_file  skills/<skill-name>/extract.py   ← helper script first (if applicable)
+write_file  skills/<skill-name>/SKILL.md     ← instructions reference the script
+write_file  skills/<skill-name>/prompt.md    ← other finalized helpers if needed
 ```
+
+Write the script **before** SKILL.md — the instructions in SKILL.md should be shaped
+around what the script already does, not the other way around.
 
 **Binary / external helper files (templates, images, data files, etc.):**
 If any such file exists in `workspace/<skill-name>/` and is required by the skill,
 **copy it directly into `skills/<skill-name>/` without asking the developer**.
-This is always the correct action — the developer chose to build the skill around it.
+Use `execute("cp workspace/<skill-name>/<file> skills/<skill-name>/<file>")` for binary
+files (`.docx`, images, etc.) — `write_file` is text-only and will corrupt them.
 Do not prompt, do not offer options, just copy and confirm in the summary.
 
 **Path references inside SKILL.md instructions:**
@@ -204,11 +310,7 @@ which skills are currently in progress.
 
 ## Rules & Constraints
 
-- **Every SKILL.md must start with the YAML frontmatter block** (`---` … `---`).
-  A skill file that starts with a heading, blank line, or body text will fail to
-  load — the registry will silently skip it and it will never appear to users or
-  the agent.  Always write the `---` delimiters first, `name` and `description`
-  inside them, then the body after the closing `---`.
+- **Every SKILL.md must follow the exact structure in Critical Behavior #3** — see above.
 - **Never** write skill definition files into `workspace/` or `sessions/`.
 - **Never** write developer working files into `skills/`.
 - **Never** create a skill in the builtin directory (`skills/builtin/`).

@@ -170,40 +170,71 @@ def _normalize_skill_md(raw: str) -> str:
     return text
 
 
+def _synthesize_frontmatter(skill_dir: Path, body: str) -> str:
+    """Prepend a minimal frontmatter block derived from the directory name.
+
+    Called when SKILL.md exists but has no parseable frontmatter at all.
+    The synthesized block is written back to disk so the skill is valid on the
+    next load without any manual intervention.
+    """
+    import warnings
+
+    dir_name = skill_dir.name
+    # Use the first markdown heading as the description, if present.
+    heading_match = re.search(r"^#\s+(.+)$", body, re.MULTILINE)
+    description = heading_match.group(1).strip() if heading_match else dir_name
+
+    synthesized = (
+        f"---\nname: {dir_name}\ndescription: {description}\nversion: 0.1.0\n---\n\n"
+        + body
+    )
+    warnings.warn(
+        f"SKILL.md in '{dir_name}' had no frontmatter — "
+        f"synthesized name='{dir_name}' from directory name and rewrote the file. "
+        "Add a proper frontmatter block to suppress this warning.",
+        stacklevel=4,
+    )
+    return synthesized
+
+
 def _parse_skill(skill_dir: Path, skill_md: Path) -> SkillInfo:
     raw = skill_md.read_text(encoding="utf-8")
     text = _normalize_skill_md(raw)
 
-    # Silently fix the file on disk when normalization was needed so future
-    # reads (and the agent's own read_file verification step) see clean output.
+    match = _FRONTMATTER_RE.match(text)
+    if not match:
+        # No frontmatter at all — synthesize one from the directory name so the
+        # skill is still usable and appears in the registry / frontend.
+        text = _synthesize_frontmatter(skill_dir, text)
+        match = _FRONTMATTER_RE.match(text)
+
+    # Rewrite the file on disk whenever the content changed (normalization or
+    # synthesis) so future reads always see a clean, valid SKILL.md.
     if text != raw:
         skill_md.write_text(text, encoding="utf-8")
 
-    match = _FRONTMATTER_RE.match(text)
-    if not match:
-        first_line = text.split("\n")[0][:60]
-        raise ValueError(
-            f"SKILL.md at {skill_md} has no valid YAML frontmatter "
-            f"(first line: {first_line!r}). "
-            "File must start with --- on line 1."
+    fm = yaml.safe_load(match.group(1)) or {}  # type: ignore[union-attr]
+
+    # Fall back to directory name when 'name' is missing from the frontmatter.
+    name: str = fm.get("name") or skill_dir.name
+    if not fm.get("name"):
+        import warnings
+        warnings.warn(
+            f"SKILL.md in '{skill_dir.name}' has no 'name' field — "
+            f"using directory name '{name}'.",
+            stacklevel=2,
         )
 
-    raw = yaml.safe_load(match.group(1)) or {}
-
-    name = raw.get("name")
-    if not name:
-        raise ValueError(f"SKILL.md at {skill_md} is missing 'name' in frontmatter")
-
-    description = raw.get("description", "")
+    description = fm.get("description", "")
     if len(description) > 1024:
         description = description[:1021] + "..."
 
     return SkillInfo(
         path=skill_dir.resolve(),
-        name=str(name),
+        name=name,
         description=description,
-        role_restriction=raw.get("role-restriction"),
-        allowed_tools=_parse_allowed_tools(raw.get("allowed-tools")),
-        version=str(raw.get("version", "0.1.0")),
-        raw_frontmatter=raw,
+        role_restriction=fm.get("role-restriction"),
+        allowed_tools=_parse_allowed_tools(fm.get("allowed-tools")),
+        version=str(fm.get("version", "0.1.0")),
+        raw_frontmatter=fm,
     )

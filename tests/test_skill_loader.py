@@ -112,13 +112,14 @@ class TestSkillLoader:
         for s in loader.load():
             assert s.path.is_absolute()
 
-    def test_missing_name_raises(self, tmp_path: Path):
+    def test_missing_name_falls_back_to_dir_name(self, tmp_path: Path):
+        """A frontmatter block without 'name' should fall back to the directory name."""
         bad = tmp_path / "bad-skill"
         bad.mkdir()
         (bad / "SKILL.md").write_text("---\ndescription: oops\n---\n# Bad\n")
         loader = SkillLoader(tmp_path)
-        skills = loader.load()   # warning is emitted, skill is skipped
-        assert not any(s.name == "bad-skill" for s in skills)
+        skills = loader.load()
+        assert any(s.name == "bad-skill" for s in skills)
 
     def test_loads_skill_with_leading_blank_line(self, tmp_path: Path):
         """A blank line before --- should be stripped and the skill should load."""
@@ -159,13 +160,17 @@ class TestSkillLoader:
         skills = {s.name: s for s in loader.load()}
         assert "no-newline" in skills
 
-    def test_missing_frontmatter_raises(self, tmp_path: Path):
+    def test_missing_frontmatter_synthesized_from_dir_name(self, tmp_path: Path):
+        """A SKILL.md with no frontmatter should be loaded using the directory name."""
         bad = tmp_path / "no-fm"
         bad.mkdir()
-        (bad / "SKILL.md").write_text("# No frontmatter here\n")
+        skill_md = bad / "SKILL.md"
+        skill_md.write_text("# No frontmatter here\n")
         loader = SkillLoader(tmp_path)
-        skills = loader.load()
-        assert len(skills) == 0
+        skills = {s.name: s for s in loader.load()}
+        assert "no-fm" in skills
+        # The file should have been rewritten with synthesized frontmatter.
+        assert skill_md.read_text().startswith("---")
 
     def test_nonexistent_root_returns_empty(self, tmp_path: Path):
         loader = SkillLoader(tmp_path / "does-not-exist")
