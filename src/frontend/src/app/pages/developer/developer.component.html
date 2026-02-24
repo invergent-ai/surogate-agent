@@ -160,15 +160,14 @@
 
     <!-- Center: Developer chat -->
     <main class="flex-1 flex flex-col min-w-0 bg-gray-50 dark:bg-zinc-900">
-      @if (!activeSkill()) {
-        <div class="flex-1 flex flex-col items-center justify-center text-center px-8">
-          <div class="text-4xl mb-4">🛠️</div>
+      <div class="flex-1 flex flex-col items-center justify-center text-center px-8">
+        @if (!activeSkill()) {
           <h2 class="text-lg font-semibold text-gray-700 dark:text-zinc-300 mb-2">Ready to build</h2>
           <p class="text-sm text-gray-500 dark:text-zinc-400 max-w-xs">
-            Select a skill from the sidebar or open a new tab to start authoring. The agent will help you create, edit, and test skills.
+            Select a skill from the sidebar or tell the agent what skill you want to create, edit or test.
           </p>
-        </div>
-      }
+        }
+      </div>
       <app-chat
         role="developer"
         [skill]="activeSkill()"
