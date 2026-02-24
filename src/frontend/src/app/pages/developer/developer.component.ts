@@ -1,4 +1,4 @@
-import { Component, ViewChild, inject, signal } from '@angular/core';
+import { Component, ViewChild, inject, signal, effect } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
 import { SkillTabsComponent } from '../../shared/components/skill-tabs/skill-tabs.component';
@@ -10,6 +10,7 @@ import { SettingsPanelComponent } from '../../shared/components/settings-panel/s
 import { AuthService } from '../../core/services/auth.service';
 import { SettingsService } from '../../core/services/settings.service';
 import { ThemeService } from '../../core/services/theme.service';
+import { BreakpointService } from '../../core/services/breakpoint.service';
 
 @Component({
   selector: 'app-developer',
@@ -30,21 +31,35 @@ export class DeveloperComponent {
   @ViewChild(SkillsBrowserComponent) skillsBrowser!: SkillsBrowserComponent;
   @ViewChild(ChatComponent) devChat!: ChatComponent;
 
-  activeSkill = signal('');
-  settingsOpen = signal(false);
+  activeSkill     = signal('');
+  settingsOpen    = signal(false);
+  leftDrawerOpen  = signal(false);
+  rightDrawerOpen = signal(false);
+  leftSnapPct     = signal(50);
+  rightSnapPct    = signal(50);
 
   readonly theme = inject(ThemeService);
+  readonly bp    = inject(BreakpointService);
 
   constructor(
     private auth: AuthService,
     private router: Router,
     readonly settings: SettingsService,
   ) {
-    // Load user's stored model/api_key from the server on page init
     this.settings.loadSettings().subscribe();
+    // Auto-close drawers when viewport widens to desktop
+    effect(() => {
+      if (!this.bp.isMobile()) {
+        this.leftDrawerOpen.set(false);
+        this.rightDrawerOpen.set(false);
+      }
+    });
   }
 
   get userId(): string { return this.auth.currentUser()?.username ?? ''; }
+
+  toggleLeftDrawer()  { this.leftDrawerOpen.update(v => !v); }
+  toggleRightDrawer() { this.rightDrawerOpen.update(v => !v); }
 
   onActiveSkillChange(name: string) {
     this.activeSkill.set(name);

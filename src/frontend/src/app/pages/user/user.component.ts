@@ -1,4 +1,4 @@
-import { Component, ViewChild, inject, signal } from '@angular/core';
+import { Component, ViewChild, inject, signal, effect } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
 import { SessionsService } from '../../core/services/sessions.service';
@@ -9,6 +9,7 @@ import { SettingsPanelComponent } from '../../shared/components/settings-panel/s
 import { AuthService } from '../../core/services/auth.service';
 import { SettingsService } from '../../core/services/settings.service';
 import { ThemeService } from '../../core/services/theme.service';
+import { BreakpointService } from '../../core/services/breakpoint.service';
 
 function uuid() {
   return crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -23,12 +24,15 @@ function uuid() {
 export class UserComponent {
   @ViewChild(ChatComponent) chatComp!: ChatComponent;
 
-  sessionId    = signal(uuid());
-  inputFiles   = signal<FileInfo[]>([]);
-  outputFiles  = signal<FileInfo[]>([]);
-  settingsOpen = signal(false);
+  sessionId      = signal(uuid());
+  inputFiles     = signal<FileInfo[]>([]);
+  outputFiles    = signal<FileInfo[]>([]);
+  settingsOpen   = signal(false);
+  leftDrawerOpen = signal(false);
+  leftSnapPct    = signal(50);
 
   readonly theme = inject(ThemeService);
+  readonly bp    = inject(BreakpointService);
 
   constructor(
     private auth: AuthService,
@@ -36,11 +40,16 @@ export class UserComponent {
     private router: Router,
     readonly settings: SettingsService,
   ) {
-    // Load user's stored model/api_key from the server on page init
     this.settings.loadSettings().subscribe();
+    // Auto-close drawer when viewport widens to desktop
+    effect(() => {
+      if (!this.bp.isMobile()) this.leftDrawerOpen.set(false);
+    });
   }
 
   get userId(): string { return this.auth.currentUser()?.username ?? ''; }
+
+  toggleLeftDrawer() { this.leftDrawerOpen.update(v => !v); }
 
   newSession() {
     this.sessionId.set(uuid());

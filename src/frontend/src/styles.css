@@ -4,8 +4,9 @@
 /* Dark mode: activate when <html> has class="dark" */
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* Brand colour palette — #FFBB33 (surogate.ai orange) */
+/* Brand colour palettes — surogate.ai */
 @theme {
+  /* Orange accent */
   --color-brand:     #FFBB33;
   --color-brand-50:  #fffbeb;
   --color-brand-100: #fef3c7;
@@ -15,6 +16,21 @@
   --color-brand-500: #f59e0b;
   --color-brand-600: #d97706;
   --color-brand-700: #b45309;
+
+  /* Purple palette — anchored to surogate.ai brand purples:
+     --accent-purple: #2a102d  (→ purple-950)
+     --secondary-purple: #8e2b5f  (→ purple-700)       */
+  --color-purple-50:  #fdf2f8;
+  --color-purple-100: #fce7f3;
+  --color-purple-200: #f9d0e9;
+  --color-purple-300: #f0a8d4;
+  --color-purple-400: #dd73b5;
+  --color-purple-500: #c44d97;
+  --color-purple-600: #a8347c;
+  --color-purple-700: #8e2b5f;
+  --color-purple-800: #6b1e47;
+  --color-purple-900: #42163a;
+  --color-purple-950: #2a102d;
 }
 
 @layer base {
