@@ -184,10 +184,14 @@ def _synthesize_frontmatter(skill_dir: Path, body: str) -> str:
     heading_match = re.search(r"^#\s+(.+)$", body, re.MULTILINE)
     description = heading_match.group(1).strip() if heading_match else dir_name
 
-    synthesized = (
-        f"---\nname: {dir_name}\ndescription: {description}\nversion: 0.1.0\n---\n\n"
-        + body
+    # Use yaml.dump so values containing YAML special characters (`:`, `#`, …)
+    # are automatically quoted rather than producing invalid YAML.
+    fm_text = yaml.dump(
+        {"name": dir_name, "description": description, "version": "0.1.0"},
+        default_flow_style=False,
+        allow_unicode=True,
     )
+    synthesized = f"---\n{fm_text}---\n\n" + body
     warnings.warn(
         f"SKILL.md in '{dir_name}' had no frontmatter — "
         f"synthesized name='{dir_name}' from directory name and rewrote the file. "
@@ -213,7 +217,19 @@ def _parse_skill(skill_dir: Path, skill_md: Path) -> SkillInfo:
     if text != raw:
         skill_md.write_text(text, encoding="utf-8")
 
-    fm = yaml.safe_load(match.group(1)) or {}  # type: ignore[union-attr]
+    fm_text = match.group(1)  # type: ignore[union-attr]
+    try:
+        fm = yaml.safe_load(fm_text) or {}
+    except yaml.YAMLError:
+        # Invalid YAML in the frontmatter (e.g. unquoted colon in a value).
+        # Fall back to line-by-line regex extraction so the skill still loads.
+        import warnings
+        warnings.warn(
+            f"SKILL.md in '{skill_dir.name}' has invalid YAML frontmatter — "
+            "loading with partial field extraction. Fix the frontmatter to suppress this.",
+            stacklevel=2,
+        )
+        fm = _extract_frontmatter_fields(fm_text)
 
     # Fall back to directory name when 'name' is missing from the frontmatter.
     name: str = fm.get("name") or skill_dir.name
@@ -225,7 +241,7 @@ def _parse_skill(skill_dir: Path, skill_md: Path) -> SkillInfo:
             stacklevel=2,
         )
 
-    description = fm.get("description", "")
+    description = str(fm.get("description", ""))
     if len(description) > 1024:
         description = description[:1021] + "..."
 

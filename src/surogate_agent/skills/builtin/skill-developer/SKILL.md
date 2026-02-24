@@ -193,6 +193,23 @@ Optional metadata fields (add inside the `---` block as needed):
 - `role-restriction: developer` — limits the skill to developer sessions only (omit to allow all roles)
 - `allowed-tools: tool_a tool_b` — space-delimited list of tools the skill may use
 
+**YAML special characters in `description`:** if the description contains `:`, `#`,
+`[`, `]`, `{`, `}`, `>`, `|`, or starts with a special character, the value MUST be
+quoted or the YAML will be invalid and the skill will fail to load entirely.
+
+Safe forms:
+```yaml
+description: "Extracts data: reads CSV and outputs JSON"   
+description: 'Fills template: mandate document'            
+description: >                                             
+  Generates a filled Word document from a source file
+  by extracting fields and filling the template.
+```
+
+
+When in doubt, always use the block scalar form (`description: >`) — it accepts any
+text without quoting concerns.
+
 ---
 
 ## Workflow for Creating a New Skill
