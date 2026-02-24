@@ -252,19 +252,28 @@ def _build_system_suffix(
         )
     else:
         user_workspace = session.workspace_dir.resolve()
+        dev_workspace = config.dev_workspace_dir.resolve()
+        session_snapshot = _snapshot_session(user_workspace)
         parts.append(
             f"You are operating in USER mode.\n\n"
-            f"## Your session workspace\n"
-            f"Session ID : {role_ctx.session_id}\n"
-            f"Workspace  : {user_workspace}\n\n"
-            f"This is your private working directory for this conversation.\n"
-            f"- Place input files here before asking the agent to process them.\n"
-            f"- The agent will write all output files here.\n"
-            f"- Example: 'Given data.csv, generate report.md' → reads "
-            f"`{user_workspace}/data.csv`, writes `{user_workspace}/report.md`.\n"
-            f"- Files from other sessions are not accessible here.\n\n"
-            f"When you reference a file by name, resolve it as "
-            f"`{user_workspace}/<filename>` unless an absolute path is given."
+            f"## Accessible file locations\n\n"
+            f"You may ONLY read and write files in these two locations:\n\n"
+            f"1. **Your session workspace** (read + write)\n"
+            f"   Path: {user_workspace}\n"
+            f"   This is the only place where user files exist.\n"
+            f"   Always resolve a filename the user mentions as "
+            f"`{user_workspace}/<filename>`.\n\n"
+            f"2. **Skill files** (read-only)\n"
+            f"   Helper files shipped with the active skill (templates, scripts, etc.).\n"
+            f"   A skill's instructions will tell you the exact path when relevant.\n\n"
+            f"### Files currently in your session workspace\n"
+            f"{session_snapshot}\n"
+            f"## FORBIDDEN paths — never access these under any circumstances\n\n"
+            f"- {dev_workspace}  ← developer workspace, not accessible to users\n"
+            f"- Any directory outside your session workspace or the skills directory\n\n"
+            f"If the user asks you to process a file that is not listed above, "
+            f"tell them to upload it to the session workspace first. "
+            f"Do not search for it in other directories."
         )
 
     if config.system_prompt_suffix:
@@ -293,6 +302,17 @@ def _user_skills_need_execute(skill_dirs: list[Path]) -> bool:
             if "execute" in skill.allowed_tools:
                 return True
     return False
+
+
+def _snapshot_session(session_workspace: Path) -> str:
+    """Return a brief text listing of files currently in the user session workspace."""
+    if not session_workspace.is_dir():
+        return "(no files uploaded yet)\n"
+    files = sorted(f for f in session_workspace.iterdir() if f.is_file())
+    if not files:
+        return "(no files uploaded yet)\n"
+    lines = [f"  {f.name}  ({f.stat().st_size:,} bytes)  →  {f}" for f in files]
+    return "\n".join(lines) + "\n"
 
 
 def _snapshot_workspace(dev_workspace: Path) -> str:
