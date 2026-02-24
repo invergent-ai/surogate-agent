@@ -6,11 +6,7 @@
       : ['bg-gray-100', 'dark:bg-zinc-800', 'text-gray-800', 'dark:text-zinc-100', 'rounded-bl-sm']"
   >
     @for (block of message.blocks; track $index) {
-      @if (isThinking(block)) {
-        <app-thinking-block [block]="block" />
-      } @else if (isToolCall(block)) {
-        <app-tool-call-block [block]="block" />
-      } @else if (isText(block)) {
+      @if (isText(block)) {
         <p class="text-sm leading-relaxed whitespace-pre-wrap">{{ block.text }}</p>
       } @else if (isError(block)) {
         <p class="text-sm text-red-500 dark:text-red-400">⚠ {{ block.text }}</p>

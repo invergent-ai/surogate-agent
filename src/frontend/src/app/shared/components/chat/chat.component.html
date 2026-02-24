@@ -1,8 +1,36 @@
-<div class="flex flex-col h-full" [class.text-sm]="compact">
+<div class="flex flex-col h-full min-h-0" [class.text-sm]="compact">
+
+  <!-- Agent activity panel: thinking + tool calls, shown when present -->
+  @if (thinkingBlocks().length > 0) {
+    <div class="flex-none flex flex-col border-b border-gray-200 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-900 max-h-56">
+      <!-- Panel header -->
+      <div class="flex-none flex items-center gap-2 px-3 py-1.5 border-b border-gray-200 dark:border-zinc-700">
+        <span class="text-[10px] font-semibold uppercase tracking-widest text-gray-400 dark:text-zinc-500">Agent activity</span>
+        @if (streaming()) {
+          <span class="ml-auto flex gap-0.5">
+            <span class="w-1 h-1 bg-brand rounded-full animate-bounce [animation-delay:-0.3s]"></span>
+            <span class="w-1 h-1 bg-brand rounded-full animate-bounce [animation-delay:-0.15s]"></span>
+            <span class="w-1 h-1 bg-brand rounded-full animate-bounce"></span>
+          </span>
+        }
+      </div>
+      <!-- Scrollable content -->
+      <div #thinkingList class="flex-1 overflow-y-auto scrollbar-thin px-3 py-2 space-y-1.5 min-h-0">
+        @for (block of thinkingBlocks(); track $index) {
+          @if (isThinkingBlock(block)) {
+            <app-thinking-block [block]="block" />
+          } @else {
+            <app-tool-call-block [block]="block" />
+          }
+        }
+      </div>
+    </div>
+  }
+
   <!-- Message list -->
   <div
     #messageList
-    class="flex-1 overflow-y-auto px-4 py-4 space-y-1 scrollbar-thin"
+    class="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-1 scrollbar-thin"
     [class.px-2]="compact"
     [class.py-2]="compact"
   >
@@ -14,7 +42,9 @@
       </div>
     }
     @for (message of messages(); track message.id) {
-      <app-message-bubble [message]="message" />
+      @if (hasVisibleContent(message)) {
+        <app-message-bubble [message]="message" />
+      }
     }
     @if (streaming()) {
       <div class="flex gap-1 px-4 pb-2">
@@ -26,7 +56,7 @@
   </div>
 
   <!-- Input area -->
-  <div class="border-t border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-3" [class.p-2]="compact">
+  <div class="flex-none border-t border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-3" [class.p-2]="compact">
     <div class="flex gap-2 items-end">
       <textarea
         class="flex-1 resize-none rounded-xl border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-50 placeholder:text-gray-400 dark:placeholder:text-zinc-500 px-3 py-2 text-sm focus:outline-none focus:border-amber-400 dark:focus:border-amber-500 transition-colors max-h-40 scrollbar-thin"

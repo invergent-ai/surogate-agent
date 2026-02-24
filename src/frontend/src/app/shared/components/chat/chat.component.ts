@@ -1,5 +1,5 @@
 import {
-  Component, Input, Output, EventEmitter, signal,
+  Component, Input, Output, EventEmitter, signal, computed,
   ViewChild, ElementRef, OnDestroy, effect, inject
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
@@ -9,9 +9,11 @@ import { ChatService } from '../../../core/services/chat.service';
 import { SettingsService } from '../../../core/services/settings.service';
 import { ToastService } from '../../../core/services/toast.service';
 import {
-  ChatMessage, MessageBlock, SseEvent, ToolBlock
+  ChatMessage, MessageBlock, SseEvent, ToolBlock, ThinkingBlock
 } from '../../../core/models/chat.models';
 import { MessageBubbleComponent } from '../message-bubble/message-bubble.component';
+import { ThinkingBlockComponent } from '../thinking-block/thinking-block.component';
+import { ToolCallBlockComponent } from '../tool-call-block/tool-call-block.component';
 
 let msgCounter = 0;
 function nextId() { return `msg-${++msgCounter}`; }
@@ -22,11 +24,12 @@ const SKILL_PATH_RE = /skills\/([^/]+)\/SKILL\.md/;
 @Component({
   selector: 'app-chat',
   standalone: true,
-  imports: [CommonModule, FormsModule, MessageBubbleComponent],
+  imports: [CommonModule, FormsModule, MessageBubbleComponent, ThinkingBlockComponent, ToolCallBlockComponent],
   templateUrl: './chat.component.html',
 })
 export class ChatComponent implements OnDestroy {
-  @ViewChild('messageList') private messageListRef!: ElementRef<HTMLElement>;
+  @ViewChild('messageList')  private messageListRef!:  ElementRef<HTMLElement>;
+  @ViewChild('thinkingList') private thinkingListRef?: ElementRef<HTMLElement>;
 
   @Input() role: 'developer' | 'user' = 'user';
   @Input() skill = '';
@@ -45,6 +48,20 @@ export class ChatComponent implements OnDestroy {
   currentSessionId = signal('');
   inputText = signal('');
 
+  /** All thinking + tool_call blocks extracted from assistant messages for the side panel. */
+  readonly thinkingBlocks = computed<(ThinkingBlock | ToolBlock)[]>(() => {
+    const result: (ThinkingBlock | ToolBlock)[] = [];
+    for (const msg of this.messages()) {
+      if (msg.role !== 'assistant') continue;
+      for (const block of msg.blocks) {
+        if (block.type === 'thinking' || block.type === 'tool_call') {
+          result.push(block as ThinkingBlock | ToolBlock);
+        }
+      }
+    }
+    return result;
+  });
+
   private chatService = inject(ChatService);
   private settings    = inject(SettingsService);
   private toast       = inject(ToastService);
@@ -56,6 +73,20 @@ export class ChatComponent implements OnDestroy {
       // Keep sessionId in sync when parent updates it
       if (this.sessionId) this.currentSessionId.set(this.sessionId);
     });
+  }
+
+  isThinkingBlock(block: ThinkingBlock | ToolBlock): block is ThinkingBlock {
+    return block.type === 'thinking';
+  }
+
+  isToolBlock(block: ThinkingBlock | ToolBlock): block is ToolBlock {
+    return block.type === 'tool_call';
+  }
+
+  hasVisibleContent(msg: ChatMessage): boolean {
+    return msg.role === 'user'
+      || !msg.finalized
+      || msg.blocks.some(b => b.type === 'text' || b.type === 'error');
   }
 
   send() {
@@ -185,8 +216,10 @@ export class ChatComponent implements OnDestroy {
 
   private scrollToBottom() {
     setTimeout(() => {
-      const el = this.messageListRef?.nativeElement;
-      if (el) el.scrollTop = el.scrollHeight;
+      const ml = this.messageListRef?.nativeElement;
+      if (ml) ml.scrollTop = ml.scrollHeight;
+      const tl = this.thinkingListRef?.nativeElement;
+      if (tl) tl.scrollTop = tl.scrollHeight;
     }, 0);
   }
 
