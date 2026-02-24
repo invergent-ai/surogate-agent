@@ -112,13 +112,17 @@ async def _stream_chat(
             return
 
         # Build config
+        # Developer role always gets shell execution — same as CLI behaviour.
+        # For user role, allow_execute may be set by the request (or auto-detected
+        # from skill frontmatter inside create_agent()).
+        effective_allow_execute = True if role == Role.DEVELOPER else req.allow_execute
         model = req.model or settings.model
         config = AgentConfig(
             model=model,
             user_skills_dir=settings.skills_dir,
             sessions_dir=settings.sessions_dir,
             dev_workspace_dir=settings.workspace_dir,
-            allow_execute=req.allow_execute,
+            allow_execute=effective_allow_execute,
             api_key=req.api_key,
         )
 
