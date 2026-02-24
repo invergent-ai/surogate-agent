@@ -2,7 +2,10 @@
 
   <!-- Agent activity panel: thinking + tool calls, shown when present -->
   @if (thinkingBlocks().length > 0) {
-    <div class="flex-none flex flex-col border-b border-gray-200 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-900 max-h-56">
+    <div
+      class="flex-none flex flex-col bg-gray-50 dark:bg-zinc-900 overflow-hidden"
+      [style.height.px]="thinkingPanelHeight()"
+    >
       <!-- Panel header -->
       <div class="flex-none flex items-center gap-2 px-3 py-1.5 border-b border-gray-200 dark:border-zinc-700">
         <span class="text-[10px] font-semibold uppercase tracking-widest text-gray-400 dark:text-zinc-500">Agent activity</span>
@@ -24,6 +27,17 @@
           }
         }
       </div>
+    </div>
+
+    <!-- Drag handle / resizable divider -->
+    <div
+      class="flex-none h-2 flex items-center justify-center cursor-row-resize
+             border-y border-gray-200 dark:border-zinc-700
+             bg-gray-100 dark:bg-zinc-800
+             hover:bg-brand/20 dark:hover:bg-brand/20 transition-colors select-none"
+      (mousedown)="onDividerMouseDown($event)"
+    >
+      <div class="w-10 h-0.5 rounded-full bg-gray-300 dark:bg-zinc-600"></div>
     </div>
   }
 

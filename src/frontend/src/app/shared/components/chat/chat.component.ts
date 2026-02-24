@@ -67,7 +67,31 @@ export class ChatComponent implements OnDestroy {
   private settings    = inject(SettingsService);
   private toast       = inject(ToastService);
 
+  /** Height of the thinking panel in pixels — user-resizable. */
+  thinkingPanelHeight = signal(180);
+
   private sub?: Subscription;
+  private _dragStartY    = 0;
+  private _dragStartH    = 0;
+  private _boundMouseMove?: (e: MouseEvent) => void;
+  private _boundMouseUp?:   () => void;
+
+  onDividerMouseDown(e: MouseEvent) {
+    e.preventDefault();
+    this._dragStartY = e.clientY;
+    this._dragStartH = this.thinkingPanelHeight();
+
+    this._boundMouseMove = (ev: MouseEvent) => {
+      const h = Math.max(60, Math.min(520, this._dragStartH + ev.clientY - this._dragStartY));
+      this.thinkingPanelHeight.set(h);
+    };
+    this._boundMouseUp = () => {
+      document.removeEventListener('mousemove', this._boundMouseMove!);
+      document.removeEventListener('mouseup',   this._boundMouseUp!);
+    };
+    document.addEventListener('mousemove', this._boundMouseMove);
+    document.addEventListener('mouseup',   this._boundMouseUp);
+  }
 
   constructor() {
     effect(() => {
@@ -227,5 +251,9 @@ export class ChatComponent implements OnDestroy {
     }, 0);
   }
 
-  ngOnDestroy() { this.sub?.unsubscribe(); }
+  ngOnDestroy() {
+    this.sub?.unsubscribe();
+    if (this._boundMouseMove) document.removeEventListener('mousemove', this._boundMouseMove);
+    if (this._boundMouseUp)   document.removeEventListener('mouseup',   this._boundMouseUp);
+  }
 }
