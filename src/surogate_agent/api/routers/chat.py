@@ -150,17 +150,18 @@ async def _stream_chat(
         if role == Role.DEVELOPER and req.skill.strip():
             history_db = config.dev_workspace_dir / ".history.db"
             try:
-                from langgraph.checkpoint.sqlite import SqliteSaver
-                _checkpointer_ctx = SqliteSaver.from_conn_string(str(history_db))
-                checkpointer = _checkpointer_ctx.__enter__()
+                from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+                _checkpointer_ctx = AsyncSqliteSaver.from_conn_string(str(history_db))
+                checkpointer = await _checkpointer_ctx.__aenter__()
             except ImportError:
                 pass
         elif role == Role.USER and req.session_id:
             history_db = settings.sessions_dir / ".history.db"
             try:
-                from langgraph.checkpoint.sqlite import SqliteSaver
-                _checkpointer_ctx = SqliteSaver.from_conn_string(str(history_db))
-                checkpointer = _checkpointer_ctx.__enter__()
+                from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+                settings.sessions_dir.mkdir(parents=True, exist_ok=True)
+                _checkpointer_ctx = AsyncSqliteSaver.from_conn_string(str(history_db))
+                checkpointer = await _checkpointer_ctx.__aenter__()
             except ImportError:
                 pass
 
@@ -248,7 +249,7 @@ async def _stream_chat(
         finally:
             if _checkpointer_ctx is not None:
                 try:
-                    _checkpointer_ctx.__exit__(None, None, None)
+                    await _checkpointer_ctx.__aexit__(None, None, None)
                 except Exception:
                     pass
 

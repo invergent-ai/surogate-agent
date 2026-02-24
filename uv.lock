@@ -2063,6 +2063,7 @@ anthropic = [
     { name = "langchain-anthropic" },
 ]
 api = [
+    { name = "aiosqlite" },
     { name = "fastapi" },
     { name = "python-multipart" },
     { name = "sse-starlette" },
@@ -2088,6 +2089,7 @@ openai = [
 
 [package.metadata]
 requires-dist = [
+    { name = "aiosqlite", marker = "extra == 'api'", specifier = ">=0.20.0" },
     { name = "bcrypt", marker = "extra == 'auth'", specifier = ">=4.0" },
     { name = "deepagents", specifier = ">=0.4.0" },
     { name = "fastapi", marker = "extra == 'api'", specifier = ">=0.115.0" },
