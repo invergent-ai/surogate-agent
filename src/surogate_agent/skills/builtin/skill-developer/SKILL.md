@@ -143,6 +143,22 @@ Instructions the agent follows when this skill is active go here.
 - The instructions (heading + body) come **after** the closing `---`
 - A file that does not follow this exact structure will not be loaded by the registry
 
+**`allowed-tools` MUST be a single space-delimited string — never a YAML list.**
+
+```yaml
+# WRONG — YAML list, will be ignored with an error
+allowed-tools:
+  - read_file
+  - write_file
+  - execute
+
+# WRONG — inline YAML list, also rejected
+allowed-tools: [read_file, write_file, execute]
+
+# RIGHT — space-delimited string on one line, always
+allowed-tools: read_file write_file execute
+```
+
 Do not separate the metadata from the instructions. Do not create a companion JSON
 or YAML file. Write one `SKILL.md` that matches the template above, every time.
 
