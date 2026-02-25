@@ -15,6 +15,8 @@
   ·
   <a href="docs/api.md"><strong>API Reference</strong></a>
   ·
+  <a href="https://agent.surogate.ai"><strong>Demo</strong></a>
+  ·
   <a href="https://github.com/invergent-ai/surogate"><strong>Surogate</strong></a>
   ·
   <a href="https://github.com/invergent-ai/surogate-studio"><strong>Surogate Studio</strong></a>
@@ -178,8 +180,6 @@ The web UI is available at `http://localhost:8000` — register, log in, and use
 
 ```bash
 docker run --rm \
-  -e ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY \
-  -e SUROGATE_JWT_SECRET=change-me-in-production \
   -p 8000:8000 \
   -v $(pwd)/data:/data \
   ghcr.io/invergent-ai/surogate-agent:latest
@@ -195,7 +195,6 @@ For production with PostgreSQL:
 
 ```bash
 docker run --rm \
-  -e ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY \
   -e SUROGATE_JWT_SECRET=$JWT_SECRET \
   -e SUROGATE_DATABASE_URL=postgresql://user:pass@db:5432/surogate \
   -p 8000:8000 \
@@ -211,7 +210,7 @@ This walkthrough shows the full developer → user lifecycle using the published
 ### 1 — Create a local skills directory
 
 ```bash
-mkdir -p skills sessions workspace
+mkdir -p data
 ```
 
 ### 2 — Developer session: author a new skill
@@ -220,8 +219,7 @@ mkdir -p skills sessions workspace
 docker run -it --rm \
   -e OPENAI_API_KEY=$OPENAI_API_KEY \
   -e SUROGATE_MODEL=gpt-5.2 \
-  -v $(pwd)/skills:/data/skills \
-  -v $(pwd)/workspace:/data/workspace \
+  -v $(pwd)/data:/data \
   ghcr.io/invergent-ai/surogate-agent:latest \
   surogate-agent developer
 ```
@@ -241,7 +239,7 @@ Agent ● skill-developer
 
 > Press `Ctrl+D` or type `/quit` to exit.
 
-The skill file is now on your host at `./skills/tech-joke/SKILL.md` (written through the bind mount).
+The skill file is now on your host at `./data/skills/tech-joke/SKILL.md` (written through the bind mount).
 
 ### 3 — User session: use the skill
 
@@ -249,8 +247,7 @@ The skill file is now on your host at `./skills/tech-joke/SKILL.md` (written thr
 docker run -it --rm \
   -e OPENAI_API_KEY=$OPENAI_API_KEY \
   -e SUROGATE_MODEL=gpt-5.2 \
-  -v $(pwd)/skills:/data/skills \
-  -v $(pwd)/sessions:/data/sessions \
+  -v $(pwd)/data:/data \
   ghcr.io/invergent-ai/surogate-agent:latest \
   surogate-agent user
 ```
