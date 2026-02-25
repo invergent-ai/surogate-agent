@@ -170,6 +170,33 @@ def _normalize_skill_md(raw: str) -> str:
     return text
 
 
+def _extract_frontmatter_fields(fm_text: str) -> dict:
+    """Extract known skill fields from invalid YAML frontmatter via regex.
+
+    Called when ``yaml.safe_load`` fails (e.g. an unquoted colon in a value).
+    Parses each line as ``key: value``; skips unrecognised or malformed lines.
+    The caller already handles defaults for every field, so this function only
+    populates what it can confidently read.
+    """
+    known_keys = {"name", "description", "role-restriction", "allowed-tools", "version"}
+    line_re = re.compile(r"^([\w-]+)\s*:\s*(.*?)\s*$")
+    fm: dict = {}
+    for line in fm_text.splitlines():
+        m = line_re.match(line)
+        if not m:
+            continue
+        key, value = m.group(1), m.group(2)
+        if key not in known_keys:
+            continue
+        # Strip surrounding quotes that the author may have added around
+        # a value containing a colon (e.g. description: "foo: bar").
+        if len(value) >= 2 and value[0] in ('"', "'") and value[-1] == value[0]:
+            value = value[1:-1]
+        if value:
+            fm[key] = value
+    return fm
+
+
 def _synthesize_frontmatter(skill_dir: Path, body: str) -> str:
     """Prepend a minimal frontmatter block derived from the directory name.
 
