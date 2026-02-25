@@ -7,6 +7,9 @@ from sqlalchemy.orm import Session
 
 from surogate_agent.auth.models import User
 from surogate_agent.auth.schemas import RegisterRequest
+from surogate_agent.core.logging import get_logger
+
+log = get_logger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -42,6 +45,7 @@ def get_user_by_email(db: Session, email: str) -> User | None:
 # ---------------------------------------------------------------------------
 
 def create_user(db: Session, req: RegisterRequest) -> User:
+    log.debug("creating user: username=%r role=%s", req.username, req.role)
     user = User(
         username=req.username,
         email=req.email,
@@ -51,6 +55,7 @@ def create_user(db: Session, req: RegisterRequest) -> User:
     db.add(user)
     db.commit()
     db.refresh(user)
+    log.debug("user created: id=%d username=%r", user.id, user.username)
     return user
 
 
@@ -60,11 +65,15 @@ def create_user(db: Session, req: RegisterRequest) -> User:
 
 def authenticate_user(db: Session, username: str, password: str) -> User | None:
     """Return the user if credentials are valid, else None."""
+    log.debug("authenticate_user: %r", username)
     user = get_user_by_username(db, username)
     if user is None or not user.is_active:
+        log.warning("authentication failed: user '%s' not found or inactive", username)
         return None
     if not verify_password(password, user.hashed_password):
+        log.warning("authentication failed: wrong password for '%s'", username)
         return None
+    log.debug("authentication successful: %r", username)
     return user
 
 

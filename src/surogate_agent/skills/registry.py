@@ -14,8 +14,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from surogate_agent.core.logging import get_logger
 from surogate_agent.core.roles import Role
 from surogate_agent.skills.loader import SkillInfo, SkillLoader
+
+log = get_logger(__name__)
 
 
 class SkillRegistry:
@@ -42,10 +45,17 @@ class SkillRegistry:
 
         Returns the list of newly registered ``SkillInfo`` objects.
         """
+        log.debug("registry scan: %s", root)
         loader = SkillLoader(root)
         found = loader.load()
         for info in found:
+            shadowed = info.name in self._skills
             self._skills[info.name] = info
+            if shadowed:
+                log.debug("skill '%s' overrides a previously registered entry", info.name)
+            else:
+                log.debug("registered skill '%s' (role=%s)", info.name, info.role_restriction or "any")
+        log.debug("registry scan complete: %d skill(s) found in %s", len(found), root)
         return found
 
     def register(self, skill_dir: Path) -> SkillInfo:
@@ -59,6 +69,7 @@ class SkillRegistry:
             raise ValueError(f"No SKILL.md found in {skill_dir}")
         info = _parse_skill(Path(skill_dir), skill_md)
         self._skills[info.name] = info
+        log.debug("hot-registered skill '%s' from %s", info.name, skill_dir)
         return info
 
     # ------------------------------------------------------------------
@@ -76,8 +87,13 @@ class SkillRegistry:
         for info in self._skills.values():
             if role == Role.DEVELOPER:
                 paths.append(info.path)
+                log.trace("role=%s — including '%s'", role.value, info.name)  # type: ignore[attr-defined]
             elif not info.is_developer_only:
                 paths.append(info.path)
+                log.trace("role=%s — including '%s'", role.value, info.name)  # type: ignore[attr-defined]
+            else:
+                log.trace("role=%s — excluding developer-only skill '%s'", role.value, info.name)  # type: ignore[attr-defined]
+        log.debug("paths_for_role(%s): %d skill(s)", role.value, len(paths))
         return paths
 
     def all_skills(self) -> list[SkillInfo]:

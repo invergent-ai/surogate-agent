@@ -34,6 +34,10 @@ from typing import Optional
 
 import yaml
 
+from surogate_agent.core.logging import get_logger
+
+log = get_logger(__name__)
+
 # Matches YAML front-matter between two --- delimiters.
 # Closing --- may be at end-of-file (no trailing newline required).
 _FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*(?:\n|$)", re.DOTALL)
@@ -111,17 +115,26 @@ class SkillLoader:
         if not self.root.is_dir():
             return skills
 
+        log.debug("scanning skill root: %s", self.root)
         for candidate in sorted(self.root.iterdir()):
             if not candidate.is_dir():
+                log.trace("skipping non-directory: %s", candidate.name)  # type: ignore[attr-defined]
                 continue
             skill_md = candidate / _SKILL_FILENAME
             if not skill_md.exists():
+                log.trace("no SKILL.md in %s — skipping", candidate.name)  # type: ignore[attr-defined]
                 continue
+            log.trace("parsing skill candidate: %s", candidate.name)  # type: ignore[attr-defined]
             try:
                 info = _parse_skill(candidate, skill_md)
                 skills.append(info)
+                log.debug(
+                    "loaded skill '%s' from %s (role=%s, tools=%s)",
+                    info.name, candidate.name, info.role_restriction or "any", info.allowed_tools,
+                )
             except Exception as exc:  # noqa: BLE001
                 import warnings
+                log.error("could not load skill at %s: %s", candidate, exc, exc_info=True)
                 warnings.warn(
                     f"Could not load skill at {candidate}: {exc}",
                     stacklevel=2,
@@ -184,15 +197,18 @@ def _extract_frontmatter_fields(fm_text: str) -> dict:
     for line in fm_text.splitlines():
         m = line_re.match(line)
         if not m:
+            log.trace("frontmatter line not matched: %r", line)  # type: ignore[attr-defined]
             continue
         key, value = m.group(1), m.group(2)
         if key not in known_keys:
+            log.trace("frontmatter key '%s' not in known fields — skipping", key)  # type: ignore[attr-defined]
             continue
         # Strip surrounding quotes that the author may have added around
         # a value containing a colon (e.g. description: "foo: bar").
         if len(value) >= 2 and value[0] in ('"', "'") and value[-1] == value[0]:
             value = value[1:-1]
         if value:
+            log.trace("extracted frontmatter field: %s=%r", key, value)  # type: ignore[attr-defined]
             fm[key] = value
     return fm
 
@@ -219,6 +235,10 @@ def _synthesize_frontmatter(skill_dir: Path, body: str) -> str:
         allow_unicode=True,
     )
     synthesized = f"---\n{fm_text}---\n\n" + body
+    log.warning(
+        "SKILL.md in '%s' had no frontmatter — synthesized from directory name and rewrote file",
+        dir_name,
+    )
     warnings.warn(
         f"SKILL.md in '{dir_name}' had no frontmatter — "
         f"synthesized name='{dir_name}' from directory name and rewrote the file. "
@@ -242,6 +262,7 @@ def _parse_skill(skill_dir: Path, skill_md: Path) -> SkillInfo:
     # Rewrite the file on disk whenever the content changed (normalization or
     # synthesis) so future reads always see a clean, valid SKILL.md.
     if text != raw:
+        log.debug("rewrote SKILL.md for '%s' (normalization or synthesis applied)", skill_dir.name)
         skill_md.write_text(text, encoding="utf-8")
 
     fm_text = match.group(1)  # type: ignore[union-attr]
@@ -251,10 +272,10 @@ def _parse_skill(skill_dir: Path, skill_md: Path) -> SkillInfo:
         # Invalid YAML in the frontmatter (e.g. unquoted colon in a value).
         # Fall back to line-by-line regex extraction so the skill still loads.
         import warnings
-        warnings.warn(
-            f"SKILL.md in '{skill_dir.name}' has invalid YAML frontmatter — "
-            "loading with partial field extraction. Fix the frontmatter to suppress this.",
-            stacklevel=2,
+        log.warning(
+            "SKILL.md in '%s' has invalid YAML frontmatter — "
+            "falling back to partial field extraction. Fix the frontmatter to suppress this.",
+            skill_dir.name,
         )
         fm = _extract_frontmatter_fields(fm_text)
 
@@ -262,6 +283,10 @@ def _parse_skill(skill_dir: Path, skill_md: Path) -> SkillInfo:
     name: str = fm.get("name") or skill_dir.name
     if not fm.get("name"):
         import warnings
+        log.warning(
+            "SKILL.md in '%s' has no 'name' field — using directory name '%s'",
+            skill_dir.name, name,
+        )
         warnings.warn(
             f"SKILL.md in '{skill_dir.name}' has no 'name' field — "
             f"using directory name '{name}'.",

@@ -12,6 +12,8 @@ Commands
   surogate-agent skills delete    Delete a skill directory
 """
 
+from typing import Annotated, Optional
+
 import typer
 from surogate_agent.cli import chat as chat_module
 from surogate_agent.cli import skills as skills_module
@@ -24,6 +26,24 @@ app = typer.Typer(
     no_args_is_help=True,
     rich_markup_mode="rich",
 )
+
+
+@app.callback()
+def _main(
+    log_level: Annotated[
+        Optional[str],
+        typer.Option(
+            "--log-level",
+            "-L",
+            help="Log level: TRACE, DEBUG, INFO, WARNING, ERROR",
+            envvar="SUROGATE_LOG_LEVEL",
+            show_default=False,
+        ),
+    ] = None,
+) -> None:
+    """Role-aware deep agent with meta-skill for conversational skill development."""
+    from surogate_agent.core.logging import setup_logging
+    setup_logging(log_level.upper() if log_level else None)
 
 app.command("chat")(chat_module.chat)
 app.command("user")(chat_module.user_cmd)

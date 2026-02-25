@@ -12,6 +12,9 @@ from fastapi.responses import FileResponse
 from surogate_agent.api.deps import ServerSettings, settings_dep
 from surogate_agent.api.models import FileInfo, WorkspaceResponse
 from surogate_agent.auth.jwt import get_current_user
+from surogate_agent.core.logging import get_logger
+
+log = get_logger(__name__)
 
 router = APIRouter(
     prefix="/workspace",
@@ -39,6 +42,7 @@ def _file_infos(directory) -> list[FileInfo]:
 
 @router.get("", response_model=list[WorkspaceResponse])
 def list_workspaces(settings: ServerSettings = Depends(settings_dep)):
+    log.debug("list_workspaces: root=%s", settings.workspace_dir)
     ws_root = settings.workspace_dir
     if not ws_root.is_dir():
         return []
@@ -77,10 +81,13 @@ def get_workspace(skill: str, settings: ServerSettings = Depends(settings_dep)):
 
 @router.delete("/{skill}")
 def delete_workspace(skill: str, settings: ServerSettings = Depends(settings_dep)):
+    log.debug("delete_workspace: %s", skill)
     ws_dir = settings.workspace_dir / skill
     if not ws_dir.is_dir():
+        log.debug("delete_workspace: workspace '%s' not found", skill)
         raise HTTPException(status_code=404, detail=f"Workspace for skill '{skill}' not found")
     shutil.rmtree(ws_dir)
+    log.info("workspace deleted: '%s'", skill)
     return {"deleted": skill}
 
 
@@ -138,6 +145,7 @@ async def upload_workspace_file(
     target = ws_dir / dest_name
     content = await upload.read()
     target.write_bytes(content)
+    log.debug("workspace '%s': uploaded '%s' (%d bytes)", skill, dest_name, len(content))
     return {"uploaded": dest_name, "skill": skill, "size_bytes": len(content)}
 
 
@@ -162,4 +170,5 @@ def delete_workspace_file(
             detail=f"File '{file}' not found in workspace '{skill}'",
         )
     target.unlink()
+    log.debug("workspace '%s': deleted '%s'", skill, file)
     return {"deleted": file}

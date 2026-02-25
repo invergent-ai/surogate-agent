@@ -17,8 +17,11 @@ from surogate_agent.auth.jwt import get_current_user
 from surogate_agent.auth.models import User
 from surogate_agent.core.agent import create_agent
 from surogate_agent.core.config import AgentConfig
+from surogate_agent.core.logging import get_logger
 from surogate_agent.core.roles import Role
 from surogate_agent.core.session import SessionManager
+
+log = get_logger(__name__)
 
 try:
     from sse_starlette.sse import EventSourceResponse
@@ -108,8 +111,14 @@ async def _stream_chat(
         try:
             role = Role(req.role.lower())
         except ValueError:
+            log.warning("invalid role requested: '%s'", req.role)
             yield _sse_event("error", {"detail": f"Invalid role '{req.role}'"})
             return
+
+        log.info(
+            "chat request: role=%s model=%s session_id=%r user=%r",
+            req.role, req.model or settings.model, req.session_id, req.user_id,
+        )
 
         # Build config
         # Developer role always gets shell execution — same as CLI behaviour.
@@ -173,8 +182,11 @@ async def _stream_chat(
             try:
                 from langgraph.checkpoint.memory import MemorySaver
                 checkpointer = MemorySaver()
+                log.debug("using MemorySaver checkpointer (in-memory, no persistence)")
             except ImportError:
-                pass
+                log.debug("no checkpointer available (langgraph not installed)")
+        else:
+            log.debug("using persistent SQLite checkpointer")
 
         # Create agent
         agent = create_agent(
@@ -219,6 +231,7 @@ async def _stream_chat(
 
                         thinking = _extract_thinking(content)
                         if thinking:
+                            log.trace("SSE thinking block (%d chars)", len(thinking))  # type: ignore[attr-defined]
                             yield _sse_event("thinking", {"text": thinking})
 
                         for tc in tool_calls or []:
@@ -230,10 +243,12 @@ async def _stream_chat(
                                 tc.get("args", {}) if isinstance(tc, dict)
                                 else getattr(tc, "args", {})
                             )
+                            log.trace("SSE tool_call: %s args=%r", name, args)  # type: ignore[attr-defined]
                             yield _sse_event("tool_call", {"name": name, "args": args})
 
                         text = _extract_content_text(content)
                         if text:
+                            log.trace("SSE text (%d chars)", len(text))  # type: ignore[attr-defined]
                             yield _sse_event("text", {"text": text})
 
                     elif msg_type == "tool":
@@ -245,6 +260,7 @@ async def _stream_chat(
                             msg.get("content", "") if isinstance(msg, dict)
                             else getattr(msg, "content", "")
                         )
+                        log.trace("SSE tool_result: %s (%d chars)", name, len(str(result_content)))  # type: ignore[attr-defined]
                         yield _sse_event(
                             "tool_result",
                             {"name": name, "result": str(result_content)[:500]},
@@ -259,9 +275,14 @@ async def _stream_chat(
 
         # Done event
         files = [f.name for f in session.files]
+        log.info(
+            "chat completed: session=%s files=%d",
+            session.session_id, len(files),
+        )
         yield _sse_event("done", {"session_id": session.session_id, "files": files})
 
     except Exception as exc:
+        log.error("unhandled exception in chat stream: %s", exc, exc_info=True)
         yield _sse_event("error", {"detail": str(exc)})
 
 

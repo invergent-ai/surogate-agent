@@ -14,8 +14,11 @@ from pathlib import Path
 from typing import Any, Optional
 
 from surogate_agent.core.config import AgentConfig, _DEFAULT_SKILLS_DIR
+from surogate_agent.core.logging import get_logger
 from surogate_agent.core.roles import Role, RoleContext
 from surogate_agent.core.session import Session, SessionManager
+
+log = get_logger(__name__)
 
 # Lazy import so that users without deepagents installed still get import errors
 # at call time, not at module import time — friendlier for unit testing with mocks.
@@ -41,6 +44,7 @@ def _build_llm(model: str, api_key: str = ""):
         The user-supplied key takes precedence over the server-side
         environment variable, allowing each user to use their own key.
     """
+    log.debug("building LLM: model=%s has_key=%s", model, bool(api_key))
     if model.startswith("claude"):
         resolved_key = api_key or os.environ.get("ANTHROPIC_API_KEY", "")
         if not resolved_key:
@@ -50,6 +54,7 @@ def _build_llm(model: str, api_key: str = ""):
             )
         try:
             from langchain_anthropic import ChatAnthropic  # type: ignore
+            log.debug("instantiated ChatAnthropic: %s", model)
             return ChatAnthropic(model=model, api_key=resolved_key)
         except ImportError:
             raise ImportError(
@@ -64,6 +69,7 @@ def _build_llm(model: str, api_key: str = ""):
             )
         try:
             from langchain_openai import ChatOpenAI  # type: ignore
+            log.debug("instantiated ChatOpenAI: %s", model)
             return ChatOpenAI(model=model, api_key=resolved_key)
         except ImportError:
             raise ImportError(
@@ -111,12 +117,19 @@ def create_agent(
     ...     "messages": [{"role": "user", "content": "Create a Jira summariser skill"}]
     ... })
     """
+    log.info(
+        "create_agent: role=%s model=%s user_id=%r",
+        role.value, config.model if config else AgentConfig().model, user_id,
+    )
+
     if config is None:
         config = AgentConfig()
 
     # Auto-create a session when none is provided.
     if session is None:
         session = SessionManager(config.sessions_dir).new_session()
+
+    log.debug("session_id=%s workspace=%s", session.session_id, session.workspace_dir)
 
     role_ctx = RoleContext(
         role=role,
@@ -134,13 +147,17 @@ def create_agent(
     skill_sources: list[str] = []
     if role == Role.DEVELOPER and _DEFAULT_SKILLS_DIR.exists():
         skill_sources.append(str(_DEFAULT_SKILLS_DIR))
+        log.debug("skill source: builtin/ (developer role)")
     if config.user_skills_dir.exists():
         skill_sources.append(str(config.user_skills_dir))
+        log.debug("skill source: user skills dir %s", config.user_skills_dir)
     # Also include any extra skills dirs from config
     for extra in config.skills_dirs:
         s = str(extra)
         if extra.exists() and s not in skill_sources and s != str(_DEFAULT_SKILLS_DIR):
             skill_sources.append(s)
+            log.debug("skill source: extra dir %s", extra)
+    log.debug("total skill sources: %d — %s", len(skill_sources), skill_sources)
 
     create_deep_agent = _import_deepagents()
     llm = _build_llm(config.model, api_key=config.api_key)
@@ -164,6 +181,10 @@ def create_agent(
             if extra != _DEFAULT_SKILLS_DIR and extra not in user_skill_dirs:
                 user_skill_dirs.append(extra)
         effective_allow_execute = _user_skills_need_execute(user_skill_dirs)
+        if effective_allow_execute:
+            log.warning(
+                "auto-activating LocalShellBackend: a user skill declared 'execute' in allowed-tools"
+            )
 
     backend = None
     try:
@@ -174,13 +195,17 @@ def create_agent(
                 virtual_mode=False,
                 inherit_env=True,   # agent needs PATH, API keys, etc.
             )
+            log.debug("backend: LocalShellBackend (allow_execute=%s)", config.allow_execute)
         else:
             from deepagents.backends.filesystem import FilesystemBackend
             backend = FilesystemBackend(root_dir=Path.cwd(), virtual_mode=False)
+            log.debug("backend: FilesystemBackend")
     except ImportError:
+        log.warning("could not import deepagents backend — falling back to deepagents default")
         backend = None  # fall back to deepagents default
 
     system_suffix = _build_system_suffix(role_ctx, config, session)
+    log.trace("system prompt suffix length: %d chars", len(system_suffix))  # type: ignore[attr-defined]
 
     graph_kwargs: dict[str, Any] = dict(
         model=llm,
@@ -194,9 +219,12 @@ def create_agent(
         graph_kwargs["checkpointer"] = checkpointer
 
     graph = create_deep_agent(**graph_kwargs)
+    log.debug("deepagents graph created")
 
     from surogate_agent.middleware.role_guard import RoleGuardAgent
-    return RoleGuardAgent(graph=graph, role_context=role_ctx, config=config, session=session)
+    agent = RoleGuardAgent(graph=graph, role_context=role_ctx, config=config, session=session)
+    log.info("agent ready: %r", agent)
+    return agent
 
 
 # ---------------------------------------------------------------------------

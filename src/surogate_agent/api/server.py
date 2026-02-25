@@ -21,7 +21,18 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--host", default="127.0.0.1", help="Bind host (default: 127.0.0.1)")
     parser.add_argument("--port", type=int, default=8000, help="Bind port (default: 8000)")
     parser.add_argument("--reload", action="store_true", help="Enable auto-reload (development)")
+    parser.add_argument(
+        "--log-level",
+        default="",
+        metavar="LEVEL",
+        help="Log level: TRACE, DEBUG, INFO, WARNING, ERROR (default: WARNING or SUROGATE_LOG_LEVEL)",
+    )
     args = parser.parse_args(argv)
+
+    from surogate_agent.core.logging import get_logger, setup_logging
+    setup_logging(args.log_level.upper() if args.log_level else None)
+    log = get_logger(__name__)
+    log.info("starting surogate-agent-api on %s:%d", args.host, args.port)
 
     try:
         import uvicorn

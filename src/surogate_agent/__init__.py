@@ -15,6 +15,7 @@ Quick start
 from surogate_agent.core.agent import create_agent
 from surogate_agent.core.roles import Role, RoleContext
 from surogate_agent.core.config import AgentConfig
+from surogate_agent.core.logging import get_logger, setup_logging
 from surogate_agent.core.session import Session, SessionManager
 from surogate_agent.skills.registry import SkillRegistry
 
@@ -23,6 +24,8 @@ __all__ = [
     "Role",
     "RoleContext",
     "AgentConfig",
+    "get_logger",
+    "setup_logging",
     "Session",
     "SessionManager",
     "SkillRegistry",

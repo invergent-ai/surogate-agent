@@ -17,6 +17,9 @@ from fastapi.responses import FileResponse
 
 from surogate_agent.api.routers import chat, sessions, skills, workspace
 from surogate_agent.api.routers import auth as auth_router
+from surogate_agent.core.logging import get_logger, setup_logging
+
+log = get_logger(__name__)
 
 # Angular build output directory (set via env var; absent in dev)
 _STATIC_DIR = os.environ.get("SUROGATE_STATIC_DIR", "")
@@ -25,16 +28,24 @@ _STATIC_DIR = os.environ.get("SUROGATE_STATIC_DIR", "")
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Create database tables on startup (idempotent)."""
+    # Ensure logging is configured from env var when the app starts without
+    # an explicit CLI invocation (e.g. uvicorn called directly).
+    setup_logging()
+    log.info("surogate-agent API starting up")
     try:
         from surogate_agent.auth.database import create_tables
         create_tables()
+        log.info("auth database tables ready")
     except Exception as exc:  # noqa: BLE001
         import warnings
+        log.error("could not create auth tables: %s", exc, exc_info=True)
         warnings.warn(f"Could not create auth tables: {exc}", stacklevel=2)
     yield
+    log.info("surogate-agent API shut down")
 
 
 def create_app() -> FastAPI:
+    log.debug("creating FastAPI application")
     application = FastAPI(
         title="surogate-agent API",
         description=(

@@ -17,8 +17,11 @@ from __future__ import annotations
 from typing import Any, AsyncIterator, Iterator, Optional
 
 from surogate_agent.core.config import AgentConfig
+from surogate_agent.core.logging import get_logger
 from surogate_agent.core.roles import RoleContext
 from surogate_agent.core.session import Session
+
+log = get_logger(__name__)
 
 
 class RoleGuardAgent:
@@ -64,6 +67,7 @@ class RoleGuardAgent:
         **kwargs,
     ) -> dict[str, Any]:
         """Synchronous invocation — mirrors ``CompiledGraph.invoke``."""
+        log.debug("invoke: role=%s session=%s", self._role_context.role.value, self._role_context.session_id)
         merged = self._merge_config(config)
         return self._graph.invoke(input, config=merged, **kwargs)
 
@@ -74,6 +78,7 @@ class RoleGuardAgent:
         **kwargs,
     ) -> Iterator[dict[str, Any]]:
         """Synchronous streaming — mirrors ``CompiledGraph.stream``."""
+        log.debug("stream: role=%s session=%s", self._role_context.role.value, self._role_context.session_id)
         merged = self._merge_config(config)
         yield from self._graph.stream(input, config=merged, **kwargs)
 
@@ -84,6 +89,7 @@ class RoleGuardAgent:
         **kwargs,
     ) -> dict[str, Any]:
         """Async invocation — mirrors ``CompiledGraph.ainvoke``."""
+        log.debug("ainvoke: role=%s session=%s", self._role_context.role.value, self._role_context.session_id)
         merged = self._merge_config(config)
         return await self._graph.ainvoke(input, config=merged, **kwargs)
 
@@ -94,6 +100,7 @@ class RoleGuardAgent:
         **kwargs,
     ) -> AsyncIterator[dict[str, Any]]:
         """Async streaming — mirrors ``CompiledGraph.astream``."""
+        log.debug("astream: role=%s session=%s", self._role_context.role.value, self._role_context.session_id)
         merged = self._merge_config(config)
         async for chunk in self._graph.astream(input, config=merged, **kwargs):
             yield chunk
@@ -153,6 +160,11 @@ class RoleGuardAgent:
                 base["configurable"] = {}
 
         base["configurable"].update(self._role_context.to_configurable())
+        log.trace(  # type: ignore[attr-defined]
+            "merged config — thread_id=%s role=%s",
+            base["configurable"].get("thread_id", "<none>"),
+            self._role_context.role.value,
+        )
         return base
 
     def __repr__(self) -> str:

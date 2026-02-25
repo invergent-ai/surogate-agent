@@ -21,9 +21,12 @@ from surogate_agent.api.models import (
 )
 from surogate_agent.auth.jwt import get_current_user
 from surogate_agent.core.config import _DEFAULT_SKILLS_DIR
+from surogate_agent.core.logging import get_logger
 from surogate_agent.core.roles import Role
 from surogate_agent.skills.loader import SkillLoader, _parse_skill
 from surogate_agent.skills.registry import SkillRegistry
+
+log = get_logger(__name__)
 
 router = APIRouter(
     prefix="/skills",
@@ -70,6 +73,7 @@ def list_skills(
     role: str = Query("all", description="Filter by role: all | developer | user"),
     settings: ServerSettings = Depends(settings_dep),
 ):
+    log.debug("list_skills: role_filter=%s", role)
     registry = _build_registry(settings)
     if role == "developer":
         paths = registry.paths_for_role(Role.DEVELOPER)
@@ -80,6 +84,7 @@ def list_skills(
     else:
         infos = registry.all_skills()
 
+    log.debug("list_skills: returning %d skill(s)", len(infos))
     return [
         SkillListItem(
             name=s.name,
@@ -99,9 +104,11 @@ def list_skills(
 
 @router.get("/{name}", response_model=SkillResponse)
 def get_skill(name: str, settings: ServerSettings = Depends(settings_dep)):
+    log.debug("get_skill: %s", name)
     registry = _build_registry(settings)
     info = registry.get(name)
     if info is None:
+        log.debug("get_skill: '%s' not found", name)
         raise HTTPException(status_code=404, detail=f"Skill '{name}' not found")
     return SkillResponse(
         name=info.name,
@@ -125,8 +132,10 @@ def create_skill(
     req: SkillCreateRequest,
     settings: ServerSettings = Depends(settings_dep),
 ):
+    log.debug("create_skill: name=%s role_restriction=%s", req.name, req.role_restriction)
     skill_dir = settings.skills_dir / req.name
     if skill_dir.exists():
+        log.warning("create_skill: '%s' already exists", req.name)
         raise HTTPException(status_code=409, detail=f"Skill '{req.name}' already exists")
 
     # Build SKILL.md content
@@ -152,6 +161,7 @@ def create_skill(
     (skill_dir / _SKILL_FILENAME).write_text(skill_md_text, encoding="utf-8")
 
     info = _parse_skill(skill_dir, skill_dir / _SKILL_FILENAME)
+    log.info("skill created: '%s' at %s", req.name, skill_dir)
     return SkillResponse(
         name=info.name,
         description=info.description,
@@ -171,11 +181,13 @@ def create_skill(
 
 @router.delete("/{name}")
 def delete_skill(name: str, settings: ServerSettings = Depends(settings_dep)):
+    log.debug("delete_skill: %s", name)
     # Refuse to delete builtin skills
     builtin_registry = SkillRegistry()
     if _DEFAULT_SKILLS_DIR.exists():
         builtin_registry.scan(_DEFAULT_SKILLS_DIR)
     if builtin_registry.get(name):
+        log.warning("delete_skill: refused — '%s' is a builtin skill", name)
         raise HTTPException(
             status_code=403,
             detail=f"Cannot delete builtin skill '{name}'",
@@ -183,9 +195,11 @@ def delete_skill(name: str, settings: ServerSettings = Depends(settings_dep)):
 
     skill_dir = settings.skills_dir / name
     if not skill_dir.is_dir():
+        log.debug("delete_skill: '%s' not found", name)
         raise HTTPException(status_code=404, detail=f"Skill '{name}' not found")
 
     shutil.rmtree(skill_dir)
+    log.info("skill deleted: '%s'", name)
     return {"deleted": name}
 
 
@@ -196,12 +210,14 @@ def delete_skill(name: str, settings: ServerSettings = Depends(settings_dep)):
 
 @router.post("/{name}/validate", response_model=ValidationResult)
 def validate_skill(name: str, settings: ServerSettings = Depends(settings_dep)):
+    log.debug("validate_skill: %s", name)
     registry = _build_registry(settings)
     info = registry.get(name)
     errors: list[str] = []
     warnings: list[str] = []
 
     if info is None:
+        log.debug("validate_skill: '%s' not found", name)
         errors.append(f"Skill '{name}' not found")
         return ValidationResult(valid=False, errors=errors, warnings=warnings)
 
@@ -219,11 +235,9 @@ def validate_skill(name: str, settings: ServerSettings = Depends(settings_dep)):
                 "Must be 'developer', 'user', or omitted."
             )
 
-    return ValidationResult(
-        valid=len(errors) == 0,
-        errors=errors,
-        warnings=warnings,
-    )
+    result = ValidationResult(valid=len(errors) == 0, errors=errors, warnings=warnings)
+    log.debug("validate_skill '%s': valid=%s errors=%s warnings=%s", name, result.valid, errors, warnings)
+    return result
 
 
 # ---------------------------------------------------------------------------

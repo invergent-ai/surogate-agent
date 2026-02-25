@@ -30,6 +30,9 @@ from surogate_agent.auth.service import (
     get_user_by_username,
     update_user_settings,
 )
+from surogate_agent.core.logging import get_logger
+
+log = get_logger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -37,29 +40,37 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 def register(req: RegisterRequest, db: Session = Depends(get_db)) -> User:
     """Register a new user and return their profile."""
+    log.debug("register: username=%r email=%r", req.username, req.email)
     if get_user_by_username(db, req.username):
+        log.warning("register: username '%s' already taken", req.username)
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Username already taken.",
         )
     if get_user_by_email(db, req.email):
+        log.warning("register: email already registered for username attempt '%s'", req.username)
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Email already registered.",
         )
-    return create_user(db, req)
+    user = create_user(db, req)
+    log.info("user registered: username=%r role=%s", user.username, user.role)
+    return user
 
 
 @router.post("/login", response_model=TokenResponse)
 def login(req: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse:
     """Authenticate with JSON body and return a JWT access token."""
+    log.debug("login attempt: username=%r", req.username)
     user = authenticate_user(db, req.username, req.password)
     if not user:
+        log.warning("login failed: username=%r", req.username)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password.",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    log.info("user logged in: username=%r role=%s", user.username, user.role)
     return TokenResponse(access_token=create_access_token(user.username, user.role))
 
 
@@ -69,13 +80,16 @@ def login_form(
     db: Session = Depends(get_db),
 ) -> TokenResponse:
     """OAuth2 password-form endpoint used by Swagger UI's Authorize button."""
+    log.debug("login_form (OAuth2): username=%r", form.username)
     user = authenticate_user(db, form.username, form.password)
     if not user:
+        log.warning("login_form failed: username=%r", form.username)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password.",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    log.info("user logged in (form): username=%r role=%s", user.username, user.role)
     return TokenResponse(access_token=create_access_token(user.username, user.role))
 
 

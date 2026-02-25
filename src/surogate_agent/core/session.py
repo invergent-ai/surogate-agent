@@ -25,6 +25,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
+from surogate_agent.core.logging import get_logger
+
+log = get_logger(__name__)
+
 
 _DEFAULT_SESSIONS_DIR = Path("./sessions")
 
@@ -80,7 +84,9 @@ class Session:
         import shutil
         self.workspace_dir.mkdir(parents=True, exist_ok=True)
         dest = self.workspace_dir / (filename or source.name)
+        log.trace("session '%s': copying %s → %s", self.session_id, source, dest)  # type: ignore[attr-defined]
         shutil.copy2(source, dest)
+        log.debug("session '%s': file added — %s (%d bytes)", self.session_id, dest.name, dest.stat().st_size)
         return dest
 
     def __str__(self) -> str:
@@ -114,13 +120,16 @@ class SessionManager:
         """
         sid = session_id or _new_session_id()
         workspace = self.sessions_dir / sid
+        log.debug("new session '%s' — workspace: %s", sid, workspace)
         return Session(session_id=sid, workspace_dir=workspace)
 
     def get_session(self, session_id: str) -> Optional[Session]:
         """Return an existing session by ID, or None if it does not exist."""
         workspace = self.sessions_dir / session_id
         if workspace.is_dir():
+            log.debug("resolved existing session '%s'", session_id)
             return Session(session_id=session_id, workspace_dir=workspace)
+        log.debug("session '%s' not found", session_id)
         return None
 
     def resume_or_create(self, session_id: str) -> Session:
@@ -145,5 +154,7 @@ class SessionManager:
         workspace = self.sessions_dir / session_id
         if workspace.is_dir():
             shutil.rmtree(workspace)
+            log.info("deleted session '%s'", session_id)
             return True
+        log.debug("delete_session: '%s' did not exist", session_id)
         return False
