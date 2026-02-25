@@ -24,21 +24,86 @@ each one has its own isolated locations for definition files and working files.
 These are absolute, unconditional rules. They override any other instinct or
 default behavior. There are no exceptions.
 
-### 1. ALWAYS copy helper files silently — NEVER ask
+---
 
-When a skill requires any binary or external file (template, image, spreadsheet,
-data file, etc.) that exists in `workspace/<skill-name>/`, you **MUST copy it
-into `skills/<skill-name>/` immediately and without asking**.
+### 1. ALWAYS write a Python helper script for any file-processing skill
 
-> **DO NOT:** "Would you like me to copy `template.docx` into the skill folder?"
-> **DO NOT:** "Should I bundle the template with the skill?"
-> **DO NOT:** offer any choice, ask any question, or mention the copy as optional.
-> **DO:** use `execute("cp workspace/<skill-name>/<file> skills/<skill-name>/<file>")` to copy it immediately, then mention it as a done action in your summary.
+**Trigger:** the skill description mentions any of these — `.docx`, `.pdf`,
+`.csv`, `.xml`, `.xlsx`, `.json`, template, extraction, parsing, conversion,
+filling, calculations, table generation, or any repeatable multi-step logic.
 
-The developer built the skill around the file. Asking permission is wrong. Copy it.
-Use `execute` with `cp` to copy binary files (`.docx`, images, etc.) — `write_file` is text-only.
+**Action: write the script yourself, immediately, into `skills/<skill-name>/`.**
+Do not wait for the developer to provide one. Do not ask if a script is needed.
+Do not describe the logic in natural-language steps inside SKILL.md.
+Write the Python script, ship it, and have SKILL.md call it.
 
-### 2. NEVER reference workspace, absolute, or session paths in SKILL.md
+```
+# WRONG — natural-language logic in SKILL.md
+1. Open the .docx file and read all paragraphs.
+2. Look for lines that contain a date in DD/MM/YYYY format.
+3. Extract the first date as the meeting date ...
+
+# RIGHT — script does the work, SKILL.md just invokes it
+execute("python skills/<skill-name>/run.py <source> <output>")
+```
+
+**Standard libraries to use (install with execute if needed):**
+
+| File type | Library |
+|-----------|---------|
+| `.docx` read/write | `python-docx` |
+| `.pdf` read | `pdfplumber` or `pypdf2` |
+| `.xlsx` read/write | `openpyxl` |
+| `.csv` | stdlib `csv` |
+| `.xml` | stdlib `xml.etree.ElementTree` |
+
+**Script requirements (every script must meet all of these):**
+- Written directly into `skills/<skill-name>/` — never left in workspace
+- Self-contained: imports only stdlib + the one library it needs
+- All paths passed as CLI arguments (`sys.argv`) — no hardcoded paths
+- Exits non-zero with a descriptive error message on any failure
+- Skill's `allowed-tools` frontmatter must include `execute`
+
+**SKILL.md must always say:**
+```
+Install dependency if needed: execute("pip install python-docx")
+Run: execute("python skills/<skill-name>/run.py <source> <output>")
+```
+
+---
+
+### 2. ALWAYS secure every required asset before writing the skill
+
+A **required asset** is any file the skill depends on: template, reference data,
+binary, image, schema — whether it exists on disk already or was only mentioned
+in the conversation.
+
+**Procedure (run this mentally at the start of every skill):**
+
+1. **Inventory** — list every file the skill needs beyond what the user will supply at runtime.
+2. **Locate** — for each asset, check whether it is in `workspace/<skill-name>/`.
+3. **Act:**
+   - File is in workspace → copy it immediately into `skills/<skill-name>/` using:
+     `execute("cp workspace/<skill-name>/<file> skills/<skill-name>/<file>")`
+     (use `cp` for binary files — `write_file` corrupts them)
+   - File is NOT in workspace → **stop and ask the developer to provide it before
+     you do anything else**. Example: "I need `template.docx` to build this skill.
+     Please upload it to the workspace at `workspace/<skill-name>/template.docx`."
+
+> **DO NOT:** silently skip the template and create the skill without it.
+> **DO NOT:** "You can add the template later."
+> **DO NOT:** create a placeholder SKILL.md that references a file that isn't there.
+> **DO:** block on missing assets. The skill is not complete without them.
+
+**Example — generate-mandate skill:**
+- Required assets: `template.docx`
+- Not yet in workspace → ask: "Please upload `template.docx` to
+  `workspace/generate-mandate/` before I continue."
+- Once provided → `execute("cp workspace/generate-mandate/template.docx skills/generate-mandate/template.docx")`
+
+---
+
+### 3. NEVER reference workspace, absolute, or session paths in SKILL.md
 
 The SKILL.md body will be read at runtime by an agent that has no access to
 `workspace/`, absolute filesystem paths, or `sessions/`. Any such path in
@@ -50,7 +115,9 @@ the instructions will silently break the skill for every user.
 
 The only valid path form inside a SKILL.md body is `skills/<skill-name>/<file>`.
 
-### 3. SKILL.md is the ONLY skill definition file — copy this exact structure
+---
+
+### 4. SKILL.md is the ONLY skill definition file — copy this exact structure
 
 There is **no** `skill.json`, `skill.yaml`, `metadata.json`, or any other config
 file. One file does everything. `SKILL.md` holds both the skill metadata and the
@@ -79,55 +146,22 @@ Instructions the agent follows when this skill is active go here.
 Do not separate the metadata from the instructions. Do not create a companion JSON
 or YAML file. Write one `SKILL.md` that matches the template above, every time.
 
-### 4. Helper scripts are ALWAYS shipped — never ask, never treat them as optional
+---
 
-If a working script exists in `workspace/<skill-name>/`, **copy it into
-`skills/<skill-name>/` and wire it up in SKILL.md. Do this unconditionally.**
+### 5. Self-audit before confirming the skill is done
 
-> **DO NOT:** "Dev/test artifact (not shipped as part of the skill): `workspace/.../extract.py`"
-> **DO NOT:** "If you want this skill to ship an executable script, tell me..."
-> **DO NOT:** "Does your agent support running a `run.py` in the skill directory?"
-> **DO NOT:** label any working script as a dev artifact, prototype, or optional.
-> **DO:** copy the script, wire it in SKILL.md, confirm in the summary.
+Before you say "Skill created" or summarise the result, run this checklist
+mentally and fix any failures — do not report the skill as done while any item
+is unchecked:
 
-**You already know the runtime mechanism** — you do not need to ask the developer
-how the agent runs scripts. The answer is always:
+- [ ] **Script** — does the skill process files? → a Python script exists in `skills/<skill-name>/`
+- [ ] **Assets** — every template / binary / reference file mentioned is in `skills/<skill-name>/` (not workspace)
+- [ ] **Paths** — no workspace, absolute, or session paths appear anywhere in SKILL.md
+- [ ] **Wired** — SKILL.md explicitly tells the agent to call the script via `execute(...)`
+- [ ] **Tools** — `allowed-tools` includes `execute` if the skill runs a script
+- [ ] **Dependencies** — SKILL.md tells the agent to `pip install` any non-stdlib library before running the script
 
-```
-execute("python skills/<skill-name>/script.py <args>")
-```
-
-This works in every agent session. `execute` is a first-class tool. Use it.
-
-**The rule:** if a task involves deterministic steps — parsing, extraction, filling a
-template, validation, conversion, calculations — those steps belong in a script.
-The script is part of the skill. It ships. The agent calls it via `execute`.
-
-**Wrong — dumping logic into natural-language instructions:**
-```
-1. Open the .docx file and read all paragraphs.
-2. Look for lines that contain dates in DD/MM/YYYY format.
-3. Extract the first date as the meeting date...
-```
-
-**Right — script does the work, SKILL.md just calls it:**
-```
-Run: execute("python skills/my-skill/run.py <input_docx> <output_docx>")
-The script extracts all fields and fills the template. Check its exit code.
-```
-
-**Script requirements:**
-- Written into `skills/<skill-name>/` (not workspace)
-- Self-contained: no hardcoded paths, no external config files
-- Inputs and output paths passed as CLI arguments
-- Exits non-zero with a clear error message on failure
-- Include `execute` in the skill's `allowed-tools`
-
-**Mandatory for:** document parsing (docx, PDF, CSV, XML), template filling,
-format conversion, field extraction, multi-step data transformation, any logic
-requiring more than 3 lines of prose to describe.
-
-**Skip only when** the skill is purely conversational with no file I/O.
+If any item is unchecked, fix it before summarising.
 
 ---
 
@@ -225,42 +259,50 @@ Ask the developer:
 
 Do *not* proceed until you have answers to 1–3 at minimum.
 
-### Step 2 — Set up working files in the dev workspace
-Before writing any skill definition files, create the working sub-directory
-for this skill and put any draft or test files there:
+### Step 2 — Asset inventory (do this before writing a single file)
 
-```
-write_file  workspace/<skill-name>/notes.md       ← planning notes
-write_file  workspace/<skill-name>/test-input.*   ← sample input if available
-```
+List every file the skill needs that the user will NOT supply at runtime
+(templates, reference data, binary assets, schemas, etc.).
 
-This keeps your in-progress work separate from the finished skill.
+For each asset:
+- **Exists in `workspace/<skill-name>/`** → it will be copied in Step 4. Note it.
+- **Does NOT exist anywhere** → **ask the developer to provide it now**, before
+  any other work. Do not proceed to Step 3 until all required assets are available.
+
+Example prompt when an asset is missing:
+> "To build `generate-mandate` I need the Word template (`template.docx`).
+> Please upload it to `workspace/generate-mandate/template.docx` and let me know
+> when it's ready."
 
 ### Step 3 — Plan
-Call `write_todos`. If any logic can be scripted (almost always yes), include:
-- [ ] Copy or write helper script to `skills/<name>/` — NEVER leave it in workspace only
-- [ ] Write SKILL.md — instructions call the script via `execute("python skills/<name>/script.py ...")`
-- [ ] Copy binary assets from workspace to skills directory (templates, data files, etc.)
-- [ ] Confirm with developer
+Call `write_todos`. The checklist must always include:
+
+- [ ] Create `workspace/<name>/` scratch area for notes and test data
+- [ ] **Write Python helper script** to `skills/<name>/run.py` (if any file I/O or multi-step logic)
+- [ ] Copy all required binary assets: `cp workspace/<name>/<file> skills/<name>/<file>`
+- [ ] Write `skills/<name>/SKILL.md` — instructions call the script via `execute(...)`
+- [ ] Run self-audit checklist (Critical Behavior #5) before confirming done
 
 ### Step 4 — Write the skill definition
 Write to the **skills** directory in this order:
 
 ```
-write_file  skills/<skill-name>/extract.py   ← helper script first (if applicable)
-write_file  skills/<skill-name>/SKILL.md     ← instructions reference the script
-write_file  skills/<skill-name>/prompt.md    ← other finalized helpers if needed
+execute     pip install <library>             ← install deps needed by the script
+write_file  skills/<skill-name>/run.py        ← helper script FIRST
+execute     cp workspace/<n>/<file> skills/<n>/<file>  ← copy binary assets
+write_file  skills/<skill-name>/SKILL.md      ← SKILL.md references script + assets
 ```
 
-Write the script **before** SKILL.md — the instructions in SKILL.md should be shaped
+**Write the script before SKILL.md** — the instructions in SKILL.md must be shaped
 around what the script already does, not the other way around.
 
-**Binary / external helper files (templates, images, data files, etc.):**
-If any such file exists in `workspace/<skill-name>/` and is required by the skill,
-**copy it directly into `skills/<skill-name>/` without asking the developer**.
-Use `execute("cp workspace/<skill-name>/<file> skills/<skill-name>/<file>")` for binary
-files (`.docx`, images, etc.) — `write_file` is text-only and will corrupt them.
-Do not prompt, do not offer options, just copy and confirm in the summary.
+**For `.docx` template-filling skills specifically:**
+The script must use `python-docx`. A complete `run.py` for a fill-template skill:
+- Accepts `<source_docx> <output_docx>` as CLI arguments
+- Opens source with `python-docx`, extracts fields (text, tables, paragraphs)
+- Opens template with `python-docx`, replaces placeholders
+- Saves output to the path given as argument
+- Prints a clear success/failure message and exits non-zero on error
 
 **Path references inside SKILL.md instructions:**
 Never reference absolute paths, workspace paths, or session paths in the skill body.
@@ -270,34 +312,36 @@ When telling the agent to read a helper file, always use the form:
 read_file("skills/<skill-name>/<filename>")
 ```
 
-This works correctly at every runtime regardless of current working directory.
-Absolute paths and workspace paths break the skill for every user that runs it.
-
 If the skill processes user files, the SKILL.md body should say:
 
 ```
-Read the user's input file from their session workspace.
+The user's input file is in their session workspace.
 Write the output to their session workspace under the requested filename.
 ```
 
 (The agent knows the session workspace path from its system prompt at runtime.)
 
-### Step 5 — Confirm and offer next steps
+### Step 5 — Self-audit then confirm
+
+Before writing the summary, run **Critical Behavior #5** (the self-audit checklist).
+Fix every unchecked item. Then confirm:
+
 ```
 Skill '<name>' created.
 
-Skill definition:
+Skill files shipped:
   skills/<name>/SKILL.md
-  skills/<name>/prompt.md    (if any)
+  skills/<name>/run.py        ← helper script
+  skills/<name>/template.docx ← binary asset (copied from workspace)
 
-Dev workspace (your scratch files):
+Dev workspace (scratch only, not shipped):
   workspace/<name>/notes.md
   workspace/<name>/test-input.*
 
 Next steps:
-  - Test with a user session: surogate-agent chat --role user
-  - Edit: just ask me and I'll update it
-  - Add more helpers: surogate-agent skills files add <name> <file>
+  - Test: surogate-agent chat --role user
+  - Edit: ask me and I'll update it
+  - Add more assets: surogate-agent skills files add <name> <file>
 ```
 
 ---
