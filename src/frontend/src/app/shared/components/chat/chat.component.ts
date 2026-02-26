@@ -73,6 +73,7 @@ export class ChatComponent implements OnDestroy {
   thinkingPanelHeight = signal(180);
 
   private sub?: Subscription;
+  private _currentAssistantId = '';
   private _dragStartY    = 0;
   private _dragStartH    = 0;
   private _boundMouseMove?: (e: MouseEvent) => void;
@@ -145,6 +146,7 @@ export class ChatComponent implements OnDestroy {
       { id: assistantId, role: 'assistant', blocks: [], timestamp: new Date(), finalized: false },
     ]);
 
+    this._currentAssistantId = assistantId;
     this.streaming.set(true);
     this.scrollToBottom();
 
@@ -160,14 +162,30 @@ export class ChatComponent implements OnDestroy {
         this.streaming.set(false);
       },
       complete: () => {
+        this._currentAssistantId = '';
         this.streaming.set(false);
-        const snapshot = this.messages().map(m => ({
-          ...m,
-          timestamp: m.timestamp instanceof Date ? m.timestamp.toISOString() : m.timestamp,
-        }));
-        if (snapshot.length > 0) this.messagesSnapshot.emit(snapshot);
+        this._emitSnapshot();
       },
     });
+  }
+
+  stop() {
+    this.sub?.unsubscribe();
+    this.sub = undefined;
+    if (this._currentAssistantId) {
+      this.finalizeAssistant(this._currentAssistantId, []);
+      this._currentAssistantId = '';
+    }
+    this.streaming.set(false);
+    this._emitSnapshot();
+  }
+
+  private _emitSnapshot() {
+    const snapshot = this.messages().map(m => ({
+      ...m,
+      timestamp: m.timestamp instanceof Date ? m.timestamp.toISOString() : m.timestamp,
+    }));
+    if (snapshot.length > 0) this.messagesSnapshot.emit(snapshot);
   }
 
   private handleEvent(ev: SseEvent, assistantId: string) {
