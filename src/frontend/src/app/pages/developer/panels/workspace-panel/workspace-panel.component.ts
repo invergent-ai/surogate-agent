@@ -25,6 +25,7 @@ export class WorkspacePanelComponent implements OnInit, OnChanges {
   effectiveFolder = computed(() => this.skill || this.localFolder());
 
   private confirmSvc = inject(ConfirmDialogService);
+  private _folderDebounce?: ReturnType<typeof setTimeout>;
 
   constructor(private workspaceService: WorkspaceService) {}
 
@@ -48,17 +49,31 @@ export class WorkspacePanelComponent implements OnInit, OnChanges {
   }
 
   onFolderInput(value: string) {
-    this.localFolder.set(value.trim());
-    if (value.trim()) this.loadFiles();
-    else this.files.set([]);
+    const trimmed = value.trim();
+    this.localFolder.set(trimmed);
+    clearTimeout(this._folderDebounce);
+    if (trimmed && this.existingFolders().includes(trimmed)) {
+      this._folderDebounce = setTimeout(() => this.loadFiles(), 400);
+    } else {
+      this.files.set([]);
+    }
   }
 
   loadFiles() {
     const folder = this.effectiveFolder();
     if (!folder) { this.files.set([]); return; }
     this.loading.set(true);
-    this.workspaceService.listFiles(folder).subscribe({
-      next: files => { this.files.set(files); this.loading.set(false); },
+    // Use get() instead of listFiles() so we first confirm the workspace exists
+    // (404 → empty state) rather than hitting /{skill}/files on a non-existent path.
+    this.workspaceService.get(folder).subscribe({
+      next: ws => {
+        this.files.set(ws.files);
+        this.loading.set(false);
+        // Keep autocomplete list fresh after a successful load
+        if (!this.existingFolders().includes(folder)) {
+          this.existingFolders.update(f => [...f, folder]);
+        }
+      },
       error: () => { this.files.set([]); this.loading.set(false); },
     });
   }
