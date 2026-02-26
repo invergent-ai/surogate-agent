@@ -166,7 +166,6 @@ export class DeveloperComponent {
 
   onSkillSelectedFromBrowser(name: string) {
     if (this.activeSkill() === name) {
-      if (this.skillTabs) this.skillTabs.inactivate();
       this.skillsBrowser.deselect();
       this.onSkillDetailClosed();
     } else {
@@ -176,6 +175,7 @@ export class DeveloperComponent {
   }
 
   onSkillDetailClosed() {
+    if (this.skillTabs) this.skillTabs.inactivate();
     this.activeSkill.set('');
     this.leftPanelWidth.set(this.bp.isMobile() ? '0px' : this.LEFT_DEFAULT);
   }

@@ -1,8 +1,9 @@
 import {
-  Component, ViewChild, inject, signal, OnInit, AfterViewInit
+  Component, ViewChild, inject, signal, computed, OnInit, AfterViewInit
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
+import { tap } from 'rxjs';
 import { SessionsService } from '../../core/services/sessions.service';
 import { FileInfo, SessionMeta } from '../../core/models/session.models';
 import { ChatMessage } from '../../core/models/chat.models';
@@ -77,6 +78,7 @@ export class UserComponent implements OnInit, AfterViewInit {
 
   sessions    = signal<SessionMeta[]>([]);
   sessionId   = signal<string>('');
+  sessionName = computed(() => this.sessions().find(s => s.sessionId === this.sessionId())?.name ?? '');
   inputFiles  = signal<FileInfo[]>([]);
   outputFiles = signal<FileInfo[]>([]);
   settingsOpen = signal(false);
@@ -231,11 +233,14 @@ export class UserComponent implements OnInit, AfterViewInit {
 
   // ── File operation closures ───────────────────────────────────────────────
 
-  downloadFile = (name: string)                  => this.sessionsService.downloadFile(this.sessionId(), name);
-  uploadFile   = (file: File)                    => this.sessionsService.uploadFile(this.sessionId(), file);
-  deleteFile   = (name: string)                  => this.sessionsService.deleteFile(this.sessionId(), name);
-  readFile     = (name: string)                  => this.sessionsService.readFile(this.sessionId(), name);
-  saveFile     = (name: string, content: string) => this.sessionsService.saveTextFile(this.sessionId(), name, content);
+  downloadFile    = (name: string)                  => this.sessionsService.downloadFile(this.sessionId(), name);
+  uploadFile      = (file: File)                    => this.sessionsService.uploadFile(this.sessionId(), file).pipe(
+                      tap(() => this._trackInputFile(file.name)));
+  deleteInputFile = (name: string)                  => this.sessionsService.deleteFile(this.sessionId(), name).pipe(
+                      tap(() => this._untrackInputFile(name)));
+  deleteFile      = (name: string)                  => this.sessionsService.deleteFile(this.sessionId(), name);
+  readFile        = (name: string)                  => this.sessionsService.readFile(this.sessionId(), name);
+  saveFile        = (name: string, content: string) => this.sessionsService.saveTextFile(this.sessionId(), name, content);
 
   exit() {
     this.auth.logout();
@@ -254,13 +259,11 @@ export class UserComponent implements OnInit, AfterViewInit {
         if (history.messages.length > 0) {
           this.chatComp.restoreSession(history.messages as ChatMessage[], meta.sessionId);
         } else {
-          this.chatComp.clearMessages();
-          this.sessionId.set(meta.sessionId);
+          this.chatComp.restoreSession([], meta.sessionId);
         }
       });
     } else if (this.chatComp) {
-      this.chatComp.clearMessages();
-      this.sessionId.set(meta.sessionId);
+      this.chatComp.restoreSession([], meta.sessionId);
     }
 
     if (meta.sessionId) this._refreshFiles();
@@ -270,8 +273,34 @@ export class UserComponent implements OnInit, AfterViewInit {
     const id = this.sessionId();
     if (!id) return;
     this.sessionsService.listFiles(id).subscribe(files => {
-      this.inputFiles.set(files);
-      this.outputFiles.set(files);
+      const inputNames = this._getInputFileNames();
+      this.inputFiles.set(files.filter(f => inputNames.has(f.name)));
+      this.outputFiles.set(files.filter(f => !inputNames.has(f.name)));
     });
+  }
+
+  // ── Input-file tracking (sessionStorage, keyed by session ID) ──────────────
+
+  private _storageKey(): string {
+    return `surogate-input-files-${this.sessionId()}`;
+  }
+
+  private _getInputFileNames(): Set<string> {
+    try {
+      const raw = sessionStorage.getItem(this._storageKey());
+      return raw ? new Set(JSON.parse(raw) as string[]) : new Set();
+    } catch { return new Set(); }
+  }
+
+  private _trackInputFile(name: string): void {
+    const names = this._getInputFileNames();
+    names.add(name);
+    sessionStorage.setItem(this._storageKey(), JSON.stringify([...names]));
+  }
+
+  private _untrackInputFile(name: string): void {
+    const names = this._getInputFileNames();
+    names.delete(name);
+    sessionStorage.setItem(this._storageKey(), JSON.stringify([...names]));
   }
 }

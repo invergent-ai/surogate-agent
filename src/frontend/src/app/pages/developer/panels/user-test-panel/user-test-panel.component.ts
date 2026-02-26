@@ -1,4 +1,4 @@
-import { Component, Output, EventEmitter, signal } from '@angular/core';
+import { Component, Output, EventEmitter, ViewChild, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { SessionsService } from '../../../../core/services/sessions.service';
 import { FileInfo } from '../../../../core/models/session.models';
@@ -25,6 +25,8 @@ function uuid() {
   },
 })
 export class UserTestPanelComponent {
+  @ViewChild(ChatComponent) chatComp?: ChatComponent;
+
   @Output() settingsRequired = new EventEmitter<void>();
   @Output() fileOpened       = new EventEmitter<void>();
   @Output() panelExpanded    = new EventEmitter<void>();
@@ -47,10 +49,12 @@ export class UserTestPanelComponent {
   constructor(private sessionsService: SessionsService) {}
 
   newSession() {
-    this.sessionId.set(uuid());
+    const id = uuid();
+    this.sessionId.set(id);
     this.inputFiles.set([]);
     this.outputFiles.set([]);
     this.inputFileNames.clear();
+    this.chatComp?.restoreSession([], id);
   }
 
   onFilesChanged(_files: string[]) {

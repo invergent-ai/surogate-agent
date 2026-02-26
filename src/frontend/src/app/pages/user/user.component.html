@@ -26,8 +26,8 @@
     </button>
 
     <!-- Session indicator -->
-    <span class="text-xs text-gray-400 dark:text-zinc-500 font-mono hidden md:block">
-      {{ sessionId().slice(0, 12) }}…
+    <span class="text-xs text-gray-400 dark:text-zinc-500 truncate hidden md:block max-w-[12rem]">
+      {{ sessionName() }}
     </span>
 
     <button
@@ -177,7 +177,7 @@
               emptyMessage="Upload files for the agent to read"
               [uploadFn]="uploadFile"
               [downloadFn]="downloadFile"
-              [deleteFn]="deleteFile"
+              [deleteFn]="deleteInputFile"
               [viewFn]="readFile"
               [saveFn]="saveFile"
               (refreshed)="refreshInputFiles()"
