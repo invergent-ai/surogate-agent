@@ -119,10 +119,20 @@ export class DeveloperComponent {
     }
     // Sync the left-panel highlight (no-op if skill already shown)
     if (name && this.skillsBrowser) this.skillsBrowser.selectByName(name);
+    // Expand the left panel so the skill detail is visible
+    if (name) this.expandLeftPanel();
+  }
+
+  onSkillsLoaded(names: string[]) {
+    if (this.skillTabs) this.skillTabs.populateTabs(names);
   }
 
   onSkillDeleted(name: string) {
     if (this.skillTabs) this.skillTabs.closeTabByName(name);
+  }
+
+  onSkillDeleteRequested(name: string) {
+    if (this.skillsBrowser) this.skillsBrowser.deleteSkill(name);
   }
 
   onSkillDetected(name: string) {

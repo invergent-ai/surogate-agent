@@ -17,8 +17,9 @@ const PAGE_SIZE = 5;
   templateUrl: './skill-tabs.component.html',
 })
 export class SkillTabsComponent {
-  @Output() activeSkillChange = new EventEmitter<string>();
-  @Output() newSkillRequested = new EventEmitter<void>();
+  @Output() activeSkillChange    = new EventEmitter<string>();
+  @Output() newSkillRequested    = new EventEmitter<void>();
+  @Output() skillDeleteRequested = new EventEmitter<string>();
 
   tabs = signal<SkillTab[]>([]);
   activeIndex = signal(-1);
@@ -37,6 +38,13 @@ export class SkillTabsComponent {
     const tab = this.tabs()[idx];
     return tab?.name ?? '';
   });
+
+  /** Called on initial page load: populate all skill tabs with no selection. */
+  populateTabs(names: string[]): void {
+    if (this.tabs().length > 0) return; // already populated; don't reset
+    this.tabs.set(names.map(name => ({ name, dirty: false })));
+    this.activeIndex.set(-1);
+  }
 
   openOrFocus(name: string): void {
     const existing = this.tabs().findIndex(t => t.name === name);
@@ -64,13 +72,20 @@ export class SkillTabsComponent {
 
   closeTab(index: number, event: MouseEvent): void {
     event.stopPropagation();
-    const tabs = [...this.tabs()];
-    tabs.splice(index, 1);
-    this.tabs.set(tabs);
-    const newActive = Math.min(this.activeIndex(), tabs.length - 1);
-    this.activeIndex.set(newActive);
-    this.pageStart.set(Math.max(0, Math.min(this.pageStart(), tabs.length - PAGE_SIZE)));
-    if (newActive >= 0) this.activeSkillChange.emit(tabs[newActive]?.name ?? '');
+    const tab = this.tabs()[index];
+    if (tab?.name) {
+      // Named tabs: delegate deletion (with confirmation) to the parent
+      this.skillDeleteRequested.emit(tab.name);
+    } else {
+      // Unnamed "new skill" tab: just close locally
+      const tabs = [...this.tabs()];
+      tabs.splice(index, 1);
+      this.tabs.set(tabs);
+      const newActive = Math.min(this.activeIndex(), tabs.length - 1);
+      this.activeIndex.set(newActive);
+      this.pageStart.set(Math.max(0, Math.min(this.pageStart(), tabs.length - PAGE_SIZE)));
+      if (newActive >= 0) this.activeSkillChange.emit(tabs[newActive]?.name ?? '');
+    }
   }
 
   /** Close the tab for a specific skill name (called externally when skill is deleted). */

@@ -14,7 +14,7 @@
         (click)="setActive(globalIndex(i))"
         class="group flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-t-md border border-b-0 transition-colors whitespace-nowrap max-w-[140px]"
         [ngClass]="isActive(i)
-          ? ['bg-white', 'dark:bg-zinc-900', 'border-gray-300', 'dark:border-zinc-600', 'text-gray-800', 'dark:text-zinc-100']
+          ? ['bg-white', 'dark:bg-zinc-900', 'border-gray-300', 'dark:border-zinc-600', 'text-gray-800', 'dark:text-zinc-100', 'border-t-2', 'border-t-amber-400', 'dark:border-t-amber-500']
           : ['bg-gray-100', 'dark:bg-zinc-800', 'border-transparent', 'text-gray-500', 'dark:text-zinc-400', 'hover:bg-gray-50', 'dark:hover:bg-zinc-700']"
         [title]="tab.name"
       >

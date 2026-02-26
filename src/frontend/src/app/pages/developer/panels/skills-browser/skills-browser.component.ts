@@ -23,6 +23,7 @@ export class SkillsBrowserComponent implements OnInit {
   @Output() skillDeleted  = new EventEmitter<string>();
   @Output() fileOpened    = new EventEmitter<void>();
   @Output() detailClosed  = new EventEmitter<void>();
+  @Output() skillsLoaded  = new EventEmitter<string[]>();
 
   skills = signal<SkillListItem[]>([]);
   filter = signal('');
@@ -52,7 +53,10 @@ export class SkillsBrowserComponent implements OnInit {
   ngOnInit() { this.loadSkills(); }
 
   loadSkills() {
-    this.skillsService.list('developer').subscribe(list => this.skills.set(list));
+    this.skillsService.list('developer').subscribe(list => {
+      this.skills.set(list);
+      this.skillsLoaded.emit(list.map(s => s.name));
+    });
   }
 
   selectSkill(name: string) {

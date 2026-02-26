@@ -29,6 +29,7 @@
       <app-skill-tabs
         (activeSkillChange)="onActiveSkillChange($event)"
         (newSkillRequested)="onNewSkillRequested()"
+        (skillDeleteRequested)="onSkillDeleteRequested($event)"
       />
     </div>
 
@@ -157,6 +158,7 @@
             (skillDeleted)="onSkillDeleted($event)"
             (fileOpened)="expandLeftPanel()"
             (detailClosed)="onSkillDetailClosed()"
+            (skillsLoaded)="onSkillsLoaded($event)"
           />
         </div>
       </div>
