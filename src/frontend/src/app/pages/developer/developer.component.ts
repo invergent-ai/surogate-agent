@@ -131,12 +131,18 @@ export class DeveloperComponent {
     // Only clear the chat when the active skill actually changes
     if (this.activeSkill() !== name) {
       this.activeSkill.set(name);
+      this.skillsBrowser.detailHeightPx.set(700);
       if (this.devChat) this.devChat.clearMessages();
+
+      // Sync the left-panel highlight (no-op if skill already shown)
+      if (name && this.skillsBrowser) this.skillsBrowser.selectByName(name);
+      // Expand the left panel so the skill detail is visible
+      if (name) this.expandLeftPanel();
+      return;
     }
-    // Sync the left-panel highlight (no-op if skill already shown)
-    if (name && this.skillsBrowser) this.skillsBrowser.selectByName(name);
-    // Expand the left panel so the skill detail is visible
-    if (name) this.expandLeftPanel();
+
+    this.skillsBrowser.deselect();
+    this.onSkillDetailClosed();
   }
 
   onSkillsLoaded(names: string[]) {
@@ -159,11 +165,18 @@ export class DeveloperComponent {
   }
 
   onSkillSelectedFromBrowser(name: string) {
-    if (this.skillTabs) this.skillTabs.openOrFocus(name);
-    this.expandLeftPanel();
+    if (this.activeSkill() === name) {
+      if (this.skillTabs) this.skillTabs.inactivate();
+      this.skillsBrowser.deselect();
+      this.onSkillDetailClosed();
+    } else {
+      if (this.skillTabs) this.skillTabs.openOrFocus(name);
+      this.expandLeftPanel();
+    }
   }
 
   onSkillDetailClosed() {
+    this.activeSkill.set('');
     this.leftPanelWidth.set(this.bp.isMobile() ? '0px' : this.LEFT_DEFAULT);
   }
 

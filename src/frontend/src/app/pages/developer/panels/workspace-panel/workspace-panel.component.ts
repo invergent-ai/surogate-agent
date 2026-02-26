@@ -1,4 +1,4 @@
-import { Component, Input, Output, EventEmitter, signal, computed, OnInit, OnChanges, SimpleChanges, inject } from '@angular/core';
+import { Component, input, Output, EventEmitter, signal, computed, OnInit, inject, effect, untracked } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ConfirmDialogService } from '../../../../core/services/confirm-dialog.service';
 import { WorkspaceService } from '../../../../core/services/workspace.service';
@@ -11,8 +11,8 @@ import { FileListComponent } from '../../../../shared/components/file-list/file-
   imports: [CommonModule, FileListComponent],
   templateUrl: './workspace-panel.component.html',
 })
-export class WorkspacePanelComponent implements OnInit, OnChanges {
-  @Input() skill = '';
+export class WorkspacePanelComponent implements OnInit {
+  readonly skill = input('');
   @Output() fileOpened = new EventEmitter<void>();
 
   files           = signal<FileInfo[]>([]);
@@ -22,12 +22,24 @@ export class WorkspacePanelComponent implements OnInit, OnChanges {
   existingFolders = signal<string[]>([]);
 
   /** The folder actually used for API calls: pinned skill takes precedence over typed folder. */
-  effectiveFolder = computed(() => this.skill || this.localFolder());
+  effectiveFolder = computed(() => this.skill() || this.localFolder());
 
   private confirmSvc = inject(ConfirmDialogService);
   private _folderDebounce?: ReturnType<typeof setTimeout>;
 
-  constructor(private workspaceService: WorkspaceService) {}
+  constructor(private workspaceService: WorkspaceService) {
+    // React to skill input changes: load files for the selected skill.
+    // untracked() prevents loadFiles() from adding extra signal dependencies.
+    effect(() => {
+      const s = this.skill();
+      if (s) {
+        this.localFolder.set('');
+        untracked(() => this.loadFiles());
+      } else {
+        this.files.set([]);
+      }
+    });
+  }
 
   ngOnInit() {
     // Populate autocomplete suggestions from existing workspace folders.
@@ -35,17 +47,6 @@ export class WorkspacePanelComponent implements OnInit, OnChanges {
       next: ws => this.existingFolders.set(ws.map(w => w.skill)),
       error: () => {},
     });
-  }
-
-  ngOnChanges(changes: SimpleChanges) {
-    if (changes['skill']) {
-      if (this.skill) {
-        this.localFolder.set('');
-        this.loadFiles();
-      } else {
-        this.files.set([]);
-      }
-    }
   }
 
   onFolderInput(value: string) {

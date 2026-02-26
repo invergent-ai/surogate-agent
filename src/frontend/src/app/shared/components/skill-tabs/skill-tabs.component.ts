@@ -59,8 +59,14 @@ export class SkillTabsComponent {
   }
 
   setActive(index: number): void {
-    this.activeIndex.set(index);
     const tab = this.tabs()[index];
+    if (this.activeIndex() === index) {
+      this.inactivate();
+      if (tab) this.activeSkillChange.emit(tab.name);
+      return;
+    }
+
+    this.activeIndex.set(index);
     // Keep active tab visible
     if (index < this.pageStart()) {
       this.pageStart.set(index);
@@ -68,6 +74,10 @@ export class SkillTabsComponent {
       this.pageStart.set(index - PAGE_SIZE + 1);
     }
     if (tab) this.activeSkillChange.emit(tab.name);
+  }
+
+  inactivate(): void {
+    this.activeIndex.set(-1);
   }
 
   closeTab(index: number, event: MouseEvent): void {

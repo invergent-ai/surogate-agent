@@ -60,6 +60,12 @@ export class SkillsBrowserComponent implements OnInit {
   }
 
   selectSkill(name: string) {
+    if (this.selectedSkill()?.name === name) {
+      this.deselect();
+      this.skillSelected.emit(name);
+      return;
+    }
+
     this.skillSelected.emit(name);
     this.loading.set(true);
     this.validation.set(null);
@@ -126,6 +132,11 @@ export class SkillsBrowserComponent implements OnInit {
       this.helperFiles.set(sk.helper_files);
       this.loading.set(false);
     });
+  }
+
+  deselect(): void {
+    this.selectedSkill.set(null);
+    this.helperFiles.set([]);
   }
 
   downloadFile = (name: string) => {
