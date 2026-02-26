@@ -69,26 +69,29 @@ export class FileListComponent {
   onDrop(e: DragEvent) {
     e.preventDefault();
     this.dragging.set(false);
-    const file = e.dataTransfer?.files?.[0];
-    if (file) this.upload(file);
+    const files = e.dataTransfer?.files;
+    if (files?.length) this.uploadFiles(Array.from(files));
   }
 
   onFileSelected(e: Event) {
-    const file = (e.target as HTMLInputElement).files?.[0];
-    if (file) this.upload(file);
+    const input = e.target as HTMLInputElement;
+    const files = input.files;
+    if (files?.length) this.uploadFiles(Array.from(files));
+    input.value = '';
   }
 
   onFileNameClick(name: string) {
     if (this.canView(name)) this.openView(name);
   }
 
-  upload(file: File) {
-    if (!this.uploadFn) return;
+  uploadFiles(files: File[]) {
+    if (!this.uploadFn || files.length === 0) return;
     this.uploading.set(true);
-    this.uploadFn(file).subscribe({
-      next:  () => { this.uploading.set(false); this.refreshed.emit(); },
-      error: () => { this.uploading.set(false); },
-    });
+    let pending = files.length;
+    const done = () => { if (--pending === 0) { this.uploading.set(false); this.refreshed.emit(); } };
+    for (const file of files) {
+      this.uploadFn(file).subscribe({ next: done, error: done });
+    }
   }
 
   download(name: string) {

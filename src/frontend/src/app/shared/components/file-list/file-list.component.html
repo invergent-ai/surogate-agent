@@ -42,7 +42,7 @@
           class="text-xs text-amber-600 dark:text-amber-400 hover:text-amber-800 dark:hover:text-amber-300 transition-colors disabled:opacity-50"
           [disabled]="uploading()"
         >{{ uploading() ? 'Uploading…' : '+ Upload' }}</button>
-        <input #fileInput type="file" class="hidden" (change)="onFileSelected($event)" />
+        <input #fileInput type="file" class="hidden" multiple (change)="onFileSelected($event)" />
       }
     </div>
 
@@ -59,7 +59,7 @@
         (click)="fileInputRef.nativeElement.click()"
       >
         @if (loadingView()) { Loading… }
-        @else { Drop file here or click to upload }
+        @else { Drop files here or click to upload }
       </div>
     }
 
