@@ -202,6 +202,31 @@ async def _stream_chat(
 
         rendered_ids: set[str] = set()
 
+        # Pre-populate with IDs of messages already stored in the checkpoint so
+        # that LangGraph re-emitting history on resume does not replay old output.
+        if checkpointer is not None:
+            try:
+                checkpoint_tuple = await checkpointer.aget_tuple(invoke_config)
+                if checkpoint_tuple and checkpoint_tuple.checkpoint:
+                    existing = _unwrap_messages(
+                        checkpoint_tuple.checkpoint
+                        .get("channel_values", {})
+                        .get("messages")
+                    )
+                    for m in existing:
+                        mid = (
+                            m.get("id") if isinstance(m, dict)
+                            else getattr(m, "id", None)
+                        )
+                        if mid:
+                            rendered_ids.add(mid)
+                    log.debug(
+                        "pre-seeded %d rendered_ids from checkpoint thread=%s",
+                        len(rendered_ids), thread_id,
+                    )
+            except Exception as exc:
+                log.debug("could not pre-seed rendered_ids: %s", exc)
+
         try:
             async for chunk in agent.astream(invoke_input, config=invoke_config):
                 for msg in _iter_messages(chunk):

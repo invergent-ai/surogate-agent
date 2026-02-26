@@ -20,6 +20,7 @@ import { FileViewerComponent } from '../../../../shared/components/file-viewer/f
 export class SkillsBrowserComponent implements OnInit {
   @Output() skillSelected = new EventEmitter<string>();
   @Output() fileOpened    = new EventEmitter<void>();
+  @Output() detailClosed  = new EventEmitter<void>();
 
   skills = signal<SkillListItem[]>([]);
   filter = signal('');
@@ -29,6 +30,11 @@ export class SkillsBrowserComponent implements OnInit {
   validating = signal(false);
   loading = signal(false);
   saving = signal(false);
+
+  /** Height (px) of the skill-detail pane; adjusted by dragging the separator. */
+  detailHeightPx = signal<number>(280);
+  private _dragStartY = 0;
+  private _dragStartH = 0;
 
   filteredSkills = () => {
     const q = this.filter().toLowerCase();
@@ -49,6 +55,7 @@ export class SkillsBrowserComponent implements OnInit {
     this.skillSelected.emit(name);
     this.loading.set(true);
     this.validation.set(null);
+    this.detailHeightPx.set(700);
     this.skillsService.get(name).subscribe(sk => {
       this.selectedSkill.set(sk);
       this.helperFiles.set(sk.helper_files);
@@ -120,4 +127,20 @@ export class SkillsBrowserComponent implements OnInit {
     const sk = this.selectedSkill()!;
     return this.skillsService.saveTextFile(sk.name, name, content);
   };
+
+  startDrag(e: PointerEvent) {
+    this._dragStartY = e.clientY;
+    this._dragStartH = this.detailHeightPx();
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  }
+
+  onDragMove(e: PointerEvent) {
+    if (!(e.currentTarget as HTMLElement).hasPointerCapture(e.pointerId)) return;
+    const delta = this._dragStartY - e.clientY; // drag up → taller detail pane
+    this.detailHeightPx.set(Math.max(80, Math.min(this._dragStartH + delta, 700)));
+  }
+
+  endDrag(e: PointerEvent) {
+    (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+  }
 }

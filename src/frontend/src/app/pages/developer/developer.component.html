@@ -154,6 +154,7 @@
           <app-skills-browser
             (skillSelected)="onSkillSelectedFromBrowser($event)"
             (fileOpened)="expandLeftPanel()"
+            (detailClosed)="onSkillDetailClosed()"
           />
         </div>
       </div>
@@ -230,11 +231,21 @@
         </div>
 
         <!-- Workspace + Test panels -->
-        <div class="flex-1 overflow-y-auto scrollbar-thin p-3 flex flex-col gap-3">
+        <div class="flex-1 min-h-0 overflow-hidden flex flex-col p-3 gap-3">
           <app-workspace-panel [skill]="activeSkill()" (fileOpened)="expandRightPanel()" />
-          <app-user-test-panel (settingsRequired)="settingsOpen.set(true)" (fileOpened)="expandRightPanel()" />
+          <app-user-test-panel
+            (settingsRequired)="settingsOpen.set(true)"
+            (fileOpened)="expandRightPanel()"
+            (panelExpanded)="expandRightPanel()"
+            (panelCollapsed)="onTestPanelCollapsed()"
+          />
         </div>
       </div>
     </aside>
   </div>
+
+  <!-- Footer -->
+  <footer class="flex-none text-center text-xs text-gray-400 dark:text-zinc-600 py-1.5 border-t border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 select-none">
+    Invergent &copy; 2026
+  </footer>
 </div>

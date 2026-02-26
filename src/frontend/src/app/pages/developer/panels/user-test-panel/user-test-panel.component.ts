@@ -14,12 +14,29 @@ function uuid() {
   standalone: true,
   imports: [CommonModule, ChatComponent, FileListComponent],
   templateUrl: './user-test-panel.component.html',
+  host: {
+    // When expanded the host element must participate in the parent flex-col as
+    // a flex-1 child, and must itself be a flex-col so that the inner div's
+    // own flex-1 child resolves against a bounded height.
+    '[class.flex-1]':   'expanded()',
+    '[class.min-h-0]':  'expanded()',
+    '[class.flex]':     'expanded()',
+    '[class.flex-col]': 'expanded()',
+  },
 })
 export class UserTestPanelComponent {
   @Output() settingsRequired = new EventEmitter<void>();
   @Output() fileOpened       = new EventEmitter<void>();
+  @Output() panelExpanded    = new EventEmitter<void>();
+  @Output() panelCollapsed   = new EventEmitter<void>();
 
   expanded = signal(false);
+
+  toggleExpanded() {
+    const next = !this.expanded();
+    this.expanded.set(next);
+    next ? this.panelExpanded.emit() : this.panelCollapsed.emit();
+  }
   sessionId = signal(uuid());
   inputFiles  = signal<FileInfo[]>([]);
   outputFiles = signal<FileInfo[]>([]);

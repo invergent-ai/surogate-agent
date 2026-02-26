@@ -123,6 +123,15 @@ export class DeveloperComponent {
 
   onSkillSelectedFromBrowser(name: string) {
     if (this.skillTabs) this.skillTabs.openOrFocus(name);
+    this.expandLeftPanel();
+  }
+
+  onSkillDetailClosed() {
+    this.leftPanelWidth.set(this.bp.isMobile() ? '0px' : this.LEFT_DEFAULT);
+  }
+
+  onTestPanelCollapsed() {
+    this.rightPanelWidth.set(this.bp.isMobile() ? '0px' : this.RIGHT_DEFAULT);
   }
 
   onNewSkillRequested() {
