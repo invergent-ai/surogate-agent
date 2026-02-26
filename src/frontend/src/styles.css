@@ -67,6 +67,23 @@
   }
 }
 
+/* DOCX rendered HTML — styles for mammoth-generated content inside [innerHTML] */
+.docx-body p                { margin-bottom: 0.6em; }
+.docx-body h1               { font-size: 1.6em; font-weight: 700; margin: 0.8em 0 0.4em; }
+.docx-body h2               { font-size: 1.3em; font-weight: 700; margin: 0.8em 0 0.4em; }
+.docx-body h3               { font-size: 1.1em; font-weight: 600; margin: 0.6em 0 0.3em; }
+.docx-body h4, .docx-body h5, .docx-body h6 { font-weight: 600; margin: 0.5em 0 0.2em; }
+.docx-body strong, .docx-body b { font-weight: 700; }
+.docx-body em, .docx-body i     { font-style: italic; }
+.docx-body ul               { list-style: disc outside; padding-left: 1.5em; margin-bottom: 0.6em; }
+.docx-body ol               { list-style: decimal outside; padding-left: 1.5em; margin-bottom: 0.6em; }
+.docx-body li               { margin-bottom: 0.2em; }
+.docx-body table            { border-collapse: collapse; width: 100%; margin-bottom: 0.8em; font-size: 0.875em; }
+.docx-body td, .docx-body th { border: 1px solid #d1d5db; padding: 0.4em 0.6em; }
+.docx-body th               { background: #f3f4f6; font-weight: 600; }
+.dark .docx-body td, .dark .docx-body th { border-color: #3f3f46; }
+.dark .docx-body th         { background: #27272a; }
+
 /* Scrollbar styling */
 @layer utilities {
   .scrollbar-thin {

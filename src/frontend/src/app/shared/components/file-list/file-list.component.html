@@ -22,8 +22,9 @@
     <div class="flex-1 min-h-[200px] rounded-lg overflow-hidden border border-gray-200 dark:border-zinc-700">
       <app-file-viewer
         [content]="file.content"
+        [blob]="file.blob"
         [fileName]="file.name"
-        [readOnly]="!saveFn"
+        [readOnly]="!saveFn || !!file.blob"
         (saved)="onFileSaved($event)"
       />
     </div>

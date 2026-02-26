@@ -14,6 +14,10 @@ const TEXT_EXTENSIONS = new Set([
   'java', 'c', 'cpp', 'h', 'rs', 'go', 'rb', 'php', 'tex',
 ]);
 
+/** Extensions that can be previewed as a binary blob (image, PDF, Office docs). */
+const IMAGE_EXTENSIONS  = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico', 'avif']);
+const BINARY_EXTENSIONS = new Set([...IMAGE_EXTENSIONS, 'pdf', 'doc', 'docx', 'ppt', 'pptx']);
+
 @Component({
   selector: 'app-file-list',
   standalone: true,
@@ -46,15 +50,20 @@ export class FileListComponent {
   loadingView = signal(false);
   saving      = signal(false);
 
-  openedFile = signal<{ name: string; content: string } | null>(null);
+  openedFile = signal<{ name: string; content: string; blob?: Blob } | null>(null);
 
   isTextFile(name: string): boolean {
     const ext = name.split('.').pop()?.toLowerCase() ?? '';
     return TEXT_EXTENSIONS.has(ext);
   }
 
+  isBinaryViewable(name: string): boolean {
+    const ext = name.split('.').pop()?.toLowerCase() ?? '';
+    return BINARY_EXTENSIONS.has(ext) && !!this.downloadFn;
+  }
+
   canView(name: string): boolean {
-    return !!this.viewFn && this.isTextFile(name);
+    return (!!this.viewFn && this.isTextFile(name)) || this.isBinaryViewable(name);
   }
 
   formatBytes(bytes: number): string {
@@ -105,16 +114,28 @@ export class FileListComponent {
   }
 
   openView(name: string) {
-    if (!this.viewFn) return;
-    this.loadingView.set(true);
-    this.viewFn(name).subscribe({
-      next: content => {
-        this.openedFile.set({ name, content });
-        this.loadingView.set(false);
-        this.fileOpened.emit();
-      },
-      error: () => { this.loadingView.set(false); },
-    });
+    if (this.isBinaryViewable(name)) {
+      this.loadingView.set(true);
+      this.downloadFn!(name).subscribe({
+        next: blob => {
+          this.openedFile.set({ name, content: '', blob });
+          this.loadingView.set(false);
+          this.fileOpened.emit();
+        },
+        error: () => { this.loadingView.set(false); },
+      });
+    } else {
+      if (!this.viewFn) return;
+      this.loadingView.set(true);
+      this.viewFn(name).subscribe({
+        next: content => {
+          this.openedFile.set({ name, content });
+          this.loadingView.set(false);
+          this.fileOpened.emit();
+        },
+        error: () => { this.loadingView.set(false); },
+      });
+    }
   }
 
   closeView() { this.openedFile.set(null); }
