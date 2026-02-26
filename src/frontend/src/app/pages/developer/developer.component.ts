@@ -1,4 +1,4 @@
-import { Component, ViewChild, inject, signal, effect } from '@angular/core';
+import { Component, ViewChild, inject, signal, effect, untracked } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
 import { SkillTabsComponent } from '../../shared/components/skill-tabs/skill-tabs.component';
@@ -12,6 +12,7 @@ import { AuthService } from '../../core/services/auth.service';
 import { SettingsService } from '../../core/services/settings.service';
 import { ThemeService } from '../../core/services/theme.service';
 import { BreakpointService } from '../../core/services/breakpoint.service';
+import { FullscreenService } from '../../core/services/fullscreen.service';
 
 /** Snap options shown in the panel header. */
 const DESKTOP_SNAPS = [
@@ -65,6 +66,9 @@ export class DeveloperComponent {
 
   readonly theme = inject(ThemeService);
   readonly bp    = inject(BreakpointService);
+  private readonly fullscreenSvc = inject(FullscreenService);
+
+  private _savedRightPanelWidth = '';
 
   constructor(
     private auth: AuthService,
@@ -89,6 +93,18 @@ export class DeveloperComponent {
       } else {
         this.leftPanelWidth.set(this.LEFT_DEFAULT);
         this.rightPanelWidth.set(this.RIGHT_DEFAULT);
+      }
+    });
+
+    // When a file viewer goes fullscreen, collapse the right panel.
+    // Restore to its previous width when fullscreen exits.
+    effect(() => {
+      if (this.fullscreenSvc.active()) {
+        this._savedRightPanelWidth = untracked(() => this.rightPanelWidth());
+        this.rightPanelWidth.set('0px');
+      } else if (this._savedRightPanelWidth) {
+        this.rightPanelWidth.set(this._savedRightPanelWidth);
+        this._savedRightPanelWidth = '';
       }
     });
   }

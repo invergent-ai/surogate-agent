@@ -21,3 +21,5 @@ htmlcov/
 /surogate.db
 /sessions/
 /workspace/
+/surogate.db-shm
+/surogate.db-wal

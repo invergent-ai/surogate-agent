@@ -1,6 +1,7 @@
-import { Component, Input, Output, EventEmitter, signal, OnChanges } from '@angular/core';
+import { Component, Input, Output, EventEmitter, signal, OnChanges, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { FullscreenService } from '../../../core/services/fullscreen.service';
 
 @Component({
   selector: 'app-file-viewer',
@@ -14,8 +15,11 @@ export class FileViewerComponent implements OnChanges {
   @Input() readOnly = false;
   @Output() saved = new EventEmitter<string>();
 
+  private readonly fullscreenSvc = inject(FullscreenService);
+
   editedContent = signal('');
-  dirty = signal(false);
+  dirty         = signal(false);
+  fullscreen    = signal(false);
 
   ngOnChanges() {
     this.editedContent.set(this.content);
@@ -35,5 +39,19 @@ export class FileViewerComponent implements OnChanges {
   reset() {
     this.editedContent.set(this.content);
     this.dirty.set(false);
+  }
+
+  openFullscreen() {
+    this.fullscreen.set(true);
+    this.fullscreenSvc.open();
+  }
+
+  closeFullscreen() {
+    this.fullscreen.set(false);
+    this.fullscreenSvc.close();
+  }
+
+  onKeydown(e: KeyboardEvent) {
+    if (e.key === 'Escape') this.closeFullscreen();
   }
 }

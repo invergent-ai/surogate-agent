@@ -1,40 +1,41 @@
-<div class="flex flex-col gap-2">
 
-  @if (openedFile(); as file) {
-    <!-- ── File viewer mode ──────────────────────────── -->
-    <div class="flex flex-col gap-2">
+@if (openedFile(); as file) {
+  <!-- ── File viewer mode ──────────────────────────── -->
+  <div class="flex flex-col h-full">
 
-      <!-- Viewer header -->
-      <div class="flex items-center gap-2">
-        <button
-          (click)="closeView()"
-          class="flex-none text-xs text-gray-500 dark:text-zinc-400 hover:text-gray-700 dark:hover:text-zinc-200 transition-colors"
-        >← {{ title }}</button>
-        <span
-          class="flex-1 min-w-0 text-xs font-mono text-gray-500 dark:text-zinc-400 truncate"
-          [title]="file.name"
-        >{{ file.name }}</span>
-        @if (saving()) {
-          <span class="flex-none text-xs text-gray-400 dark:text-zinc-500 italic">Saving…</span>
-        }
-      </div>
-
-      <!-- Viewer body -->
-      <div class="rounded-lg overflow-hidden border border-gray-200 dark:border-zinc-700 h-[50vh]">
-        <app-file-viewer
-          [content]="file.content"
-          [fileName]="file.name"
-          [readOnly]="!saveFn"
-          (saved)="onFileSaved($event)"
-        />
-      </div>
+    <!-- Viewer header -->
+    <div class="flex-none flex items-center gap-2 pb-1.5">
+      <button
+        (click)="closeView()"
+        class="flex-none text-xs text-gray-500 dark:text-zinc-400 hover:text-gray-700 dark:hover:text-zinc-200 transition-colors"
+      >← {{ title }}</button>
+      <span
+        class="flex-1 min-w-0 text-xs font-mono text-gray-500 dark:text-zinc-400 truncate"
+        [title]="file.name"
+      >{{ file.name }}</span>
+      @if (saving()) {
+        <span class="flex-none text-xs text-gray-400 dark:text-zinc-500 italic">Saving…</span>
+      }
     </div>
 
-  } @else {
-    <!-- ── File list mode ──────────────────────────────── -->
+    <!-- Viewer body — fills remaining height; only the textarea inside scrolls -->
+    <div class="flex-1 min-h-[200px] rounded-lg overflow-hidden border border-gray-200 dark:border-zinc-700">
+      <app-file-viewer
+        [content]="file.content"
+        [fileName]="file.name"
+        [readOnly]="!saveFn"
+        (saved)="onFileSaved($event)"
+      />
+    </div>
+
+  </div>
+
+} @else {
+  <!-- ── File list mode ──────────────────────────────── -->
+  <div class="flex flex-col gap-2 h-full overflow-y-auto scrollbar-thin">
 
     <!-- Section header + upload button -->
-    <div class="flex items-center justify-between">
+    <div class="flex items-center justify-between flex-none">
       <h3 class="text-xs font-semibold text-gray-500 dark:text-zinc-400 uppercase tracking-wider">{{ title }}</h3>
       @if (allowUpload) {
         <button
@@ -49,7 +50,7 @@
     <!-- Drop zone -->
     @if (allowUpload) {
       <div
-        class="border-2 border-dashed rounded-lg p-3 text-center text-xs text-gray-400 dark:text-zinc-500 transition-colors cursor-pointer"
+        class="flex-none border-2 border-dashed rounded-lg p-3 text-center text-xs text-gray-400 dark:text-zinc-500 transition-colors cursor-pointer"
         [ngClass]="dragging()
           ? 'border-amber-400 dark:border-amber-500 bg-amber-50 dark:bg-amber-950/20'
           : 'border-gray-200 dark:border-zinc-700 hover:border-gray-300 dark:hover:border-zinc-600'"
@@ -119,6 +120,6 @@
       </ul>
     }
 
-  }
+  </div>
 
-</div>
+}

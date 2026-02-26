@@ -106,9 +106,10 @@
         />
       </div>
 
-      <!-- Helper files (scrollable, capped height so viewer stays visible) -->
-      <div class="px-3 pt-2 pb-4 flex-none bg-gray-50 dark:bg-zinc-900 overflow-y-auto" style="max-height: 9rem">
+      <!-- Helper files -->
+      <div class="flex-1 min-h-0 overflow-hidden flex flex-col px-3 pt-2 pb-2 bg-gray-50 dark:bg-zinc-900">
         <app-file-list
+          class="flex-1 min-h-0"
           title="Helper files"
           [files]="helperFiles()"
           emptyMessage="No helper files"
