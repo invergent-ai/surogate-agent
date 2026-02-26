@@ -1,6 +1,6 @@
 [project]
 name = "surogate-agent"
-version = "1.0.0"
+version = "1.1.0"
 description = "Role-aware deep agent with meta-skill for conversational skill development"
 authors = [{ name = "The Invergent Team" }]
 license = "Apache-2.0"
