@@ -1,6 +1,6 @@
 <div class="flex w-full mb-4" [class.justify-end]="message.role === 'user'">
   <div
-    class="max-w-[85%] rounded-2xl px-4 py-2.5"
+    class="max-w-[85%] rounded-2xl px-4 py-2.5 select-text"
     [ngClass]="message.role === 'user'
       ? ['bg-brand', 'text-zinc-900', 'rounded-br-sm']
       : ['bg-gray-100', 'dark:bg-zinc-800', 'text-gray-800', 'dark:text-zinc-100', 'rounded-bl-sm']"

@@ -34,6 +34,22 @@
 }
 
 @layer base {
+  button, [role="button"], a {
+    cursor: pointer;
+  }
+
+  /* Disable text selection across the whole UI */
+  body {
+    user-select: none;
+  }
+
+  /* Re-enable selection only on actual content */
+  input, textarea, [contenteditable],
+  .selectable, .message-content,
+  code, pre {
+    user-select: text;
+  }
+
   html, body {
     height: 100%;
     margin: 0;
