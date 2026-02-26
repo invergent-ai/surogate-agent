@@ -88,6 +88,7 @@
   </header>
 
   <app-settings-panel [open]="settingsOpen()" (closed)="settingsOpen.set(false)" />
+  <app-confirm-dialog />
 
   <!-- Body -->
   <div class="flex flex-1 overflow-hidden relative">
@@ -153,6 +154,7 @@
         <div class="flex-1 overflow-hidden min-h-0">
           <app-skills-browser
             (skillSelected)="onSkillSelectedFromBrowser($event)"
+            (skillDeleted)="onSkillDeleted($event)"
             (fileOpened)="expandLeftPanel()"
             (detailClosed)="onSkillDetailClosed()"
           />

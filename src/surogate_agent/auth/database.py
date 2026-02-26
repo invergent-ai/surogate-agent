@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Generator
+from pathlib import Path
 
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
@@ -28,6 +29,18 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 class Base(DeclarativeBase):
     """Shared declarative base for all ORM models."""
+
+
+def get_sqlite_path() -> Path | None:
+    """Return the resolved filesystem path of the SQLite database, or None.
+
+    Used to point LangGraph's AsyncSqliteSaver at the same file as the main
+    application DB, eliminating separate ``.history.db`` files.
+    """
+    if DATABASE_URL.startswith("sqlite:///"):
+        raw = DATABASE_URL[len("sqlite:///"):]
+        return Path(raw).resolve()
+    return None
 
 
 def get_db() -> Generator[Session, None, None]:

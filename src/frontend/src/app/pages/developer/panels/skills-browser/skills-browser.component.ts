@@ -1,8 +1,9 @@
 import {
-  Component, Output, EventEmitter, signal, OnInit
+  Component, Output, EventEmitter, signal, OnInit, inject
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { ConfirmDialogService } from '../../../../core/services/confirm-dialog.service';
 import { SkillsService } from '../../../../core/services/skills.service';
 import {
   FileInfo, SkillListItem, SkillResponse, ValidationResult
@@ -19,6 +20,7 @@ import { FileViewerComponent } from '../../../../shared/components/file-viewer/f
 })
 export class SkillsBrowserComponent implements OnInit {
   @Output() skillSelected = new EventEmitter<string>();
+  @Output() skillDeleted  = new EventEmitter<string>();
   @Output() fileOpened    = new EventEmitter<void>();
   @Output() detailClosed  = new EventEmitter<void>();
 
@@ -42,6 +44,8 @@ export class SkillsBrowserComponent implements OnInit {
       !q || s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q)
     );
   };
+
+  private confirmSvc = inject(ConfirmDialogService);
 
   constructor(private skillsService: SkillsService) {}
 
@@ -95,11 +99,28 @@ export class SkillsBrowserComponent implements OnInit {
     this.skillsService.listFiles(sk.name).subscribe(files => this.helperFiles.set(files));
   }
 
-  deleteSkill(name: string) {
-    if (!confirm(`Delete skill '${name}'? This cannot be undone.`)) return;
+  async deleteSkill(name: string) {
+    const ok = await this.confirmSvc.confirm(
+      `Delete skill "${name}"? This cannot be undone.`,
+      { title: 'Delete skill' },
+    );
+    if (!ok) return;
     this.skillsService.delete(name).subscribe(() => {
       if (this.selectedSkill()?.name === name) this.selectedSkill.set(null);
       this.loadSkills();
+      this.skillDeleted.emit(name);
+    });
+  }
+
+  /** Load skill detail without emitting skillSelected — used for tab-driven selection to avoid circular events. */
+  selectByName(name: string): void {
+    if (!name || this.selectedSkill()?.name === name) return;
+    this.loading.set(true);
+    this.validation.set(null);
+    this.skillsService.get(name).subscribe(sk => {
+      this.selectedSkill.set(sk);
+      this.helperFiles.set(sk.helper_files);
+      this.loading.set(false);
     });
   }
 

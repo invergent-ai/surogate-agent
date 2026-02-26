@@ -30,7 +30,8 @@
       "WebFetch(domain:surogate.ai)",
       "Bash(wc:*)",
       "Bash(npm run:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(pytest:*)"
     ]
   }
 }

@@ -13,6 +13,7 @@ from starlette.requests import Request
 
 from surogate_agent.api.deps import ServerSettings, settings_dep
 from surogate_agent.api.models import ChatRequest
+from surogate_agent.auth.database import get_sqlite_path
 from surogate_agent.auth.jwt import get_current_user
 from surogate_agent.auth.models import User
 from surogate_agent.core.agent import create_agent
@@ -157,22 +158,28 @@ async def _stream_chat(
             )
             thread_id = session.session_id
 
-        # Checkpointer
+        # Checkpointer — always uses the unified surogate.db when available
         checkpointer = None
         _checkpointer_ctx = None
-        if role == Role.DEVELOPER and req.skill.strip():
-            history_db = config.dev_workspace_dir / ".history.db"
+        _sqlite_path = get_sqlite_path()
+        needs_checkpointer = (
+            (role == Role.DEVELOPER and req.skill.strip())
+            or (role == Role.USER and req.session_id)
+        )
+        if needs_checkpointer:
+            history_db = (
+                _sqlite_path
+                if _sqlite_path is not None
+                else (
+                    config.dev_workspace_dir / ".history.db"
+                    if role == Role.DEVELOPER
+                    else settings.sessions_dir / ".history.db"
+                )
+            )
             try:
                 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
-                _checkpointer_ctx = AsyncSqliteSaver.from_conn_string(str(history_db))
-                checkpointer = await _checkpointer_ctx.__aenter__()
-            except ImportError:
-                pass
-        elif role == Role.USER and req.session_id:
-            history_db = settings.sessions_dir / ".history.db"
-            try:
-                from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
-                settings.sessions_dir.mkdir(parents=True, exist_ok=True)
+                if role == Role.USER:
+                    settings.sessions_dir.mkdir(parents=True, exist_ok=True)
                 _checkpointer_ctx = AsyncSqliteSaver.from_conn_string(str(history_db))
                 checkpointer = await _checkpointer_ctx.__aenter__()
             except ImportError:

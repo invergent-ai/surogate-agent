@@ -1,5 +1,6 @@
-import { Component, Input, Output, EventEmitter, signal, computed, OnInit, OnChanges, SimpleChanges } from '@angular/core';
+import { Component, Input, Output, EventEmitter, signal, computed, OnInit, OnChanges, SimpleChanges, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { ConfirmDialogService } from '../../../../core/services/confirm-dialog.service';
 import { WorkspaceService } from '../../../../core/services/workspace.service';
 import { FileInfo } from '../../../../core/models/session.models';
 import { FileListComponent } from '../../../../shared/components/file-list/file-list.component';
@@ -22,6 +23,8 @@ export class WorkspacePanelComponent implements OnInit, OnChanges {
 
   /** The folder actually used for API calls: pinned skill takes precedence over typed folder. */
   effectiveFolder = computed(() => this.skill || this.localFolder());
+
+  private confirmSvc = inject(ConfirmDialogService);
 
   constructor(private workspaceService: WorkspaceService) {}
 
@@ -60,9 +63,14 @@ export class WorkspacePanelComponent implements OnInit, OnChanges {
     });
   }
 
-  cleanWorkspace() {
+  async cleanWorkspace() {
     const folder = this.effectiveFolder();
-    if (!folder || !confirm(`Delete all workspace files for '${folder}'?`)) return;
+    if (!folder) return;
+    const ok = await this.confirmSvc.confirm(
+      `Delete all workspace files for "${folder}"? This cannot be undone.`,
+      { title: 'Clean workspace', actionLabel: 'Clean' },
+    );
+    if (!ok) return;
     this.workspaceService.delete(folder).subscribe(() => this.loadFiles());
   }
 

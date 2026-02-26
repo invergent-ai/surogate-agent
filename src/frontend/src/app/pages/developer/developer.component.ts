@@ -7,6 +7,7 @@ import { SkillsBrowserComponent } from './panels/skills-browser/skills-browser.c
 import { WorkspacePanelComponent } from './panels/workspace-panel/workspace-panel.component';
 import { UserTestPanelComponent } from './panels/user-test-panel/user-test-panel.component';
 import { SettingsPanelComponent } from '../../shared/components/settings-panel/settings-panel.component';
+import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/confirm-dialog.component';
 import { AuthService } from '../../core/services/auth.service';
 import { SettingsService } from '../../core/services/settings.service';
 import { ThemeService } from '../../core/services/theme.service';
@@ -39,6 +40,7 @@ const MOBILE_SNAPS = [
     WorkspacePanelComponent,
     UserTestPanelComponent,
     SettingsPanelComponent,
+    ConfirmDialogComponent,
   ],
   templateUrl: './developer.component.html',
 })
@@ -110,8 +112,17 @@ export class DeveloperComponent {
   }
 
   onActiveSkillChange(name: string) {
-    this.activeSkill.set(name);
-    if (this.devChat) this.devChat.clearMessages();
+    // Only clear the chat when the active skill actually changes
+    if (this.activeSkill() !== name) {
+      this.activeSkill.set(name);
+      if (this.devChat) this.devChat.clearMessages();
+    }
+    // Sync the left-panel highlight (no-op if skill already shown)
+    if (name && this.skillsBrowser) this.skillsBrowser.selectByName(name);
+  }
+
+  onSkillDeleted(name: string) {
+    if (this.skillTabs) this.skillTabs.closeTabByName(name);
   }
 
   onSkillDetected(name: string) {

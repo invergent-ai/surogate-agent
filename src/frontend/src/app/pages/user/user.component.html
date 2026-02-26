@@ -10,7 +10,7 @@
 
     <div class="flex-1"></div>
 
-    <!-- Files panel toggle (all screens) -->
+    <!-- Files panel toggle -->
     <button
       (click)="toggleLeftPanel()"
       class="transition-colors p-1.5 rounded-md"
@@ -75,11 +75,12 @@
   </header>
 
   <app-settings-panel [open]="settingsOpen()" (closed)="settingsOpen.set(false)" />
+  <app-confirm-dialog />
 
   <!-- Body -->
   <div class="flex flex-1 overflow-hidden relative">
 
-    <!-- Mobile backdrop (overlay mode only) -->
+    <!-- Mobile backdrop -->
     @if (leftPanelWidth() !== '0px') {
       <div
         class="absolute inset-0 z-30 bg-black/50 lg:hidden"
@@ -87,9 +88,7 @@
       ></div>
     }
 
-    <!-- Left: file panels
-         Mobile  → absolute overlay, slides from left
-         Desktop → in-flow, pushes center content            -->
+    <!-- Left panel: sessions + files -->
     <aside
       class="flex-none flex flex-col overflow-hidden transition-[width] duration-300
              border-r border-gray-200 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-900
@@ -97,10 +96,9 @@
              lg:static lg:shadow-none shadow-xl"
       [style.width]="leftPanelWidth()"
     >
-      <!-- Min-width wrapper prevents content collapsing during animation -->
       <div class="flex flex-col h-full" style="min-width: 14rem">
 
-        <!-- Snap controls (all screens) -->
+        <!-- Snap controls -->
         <div class="flex-none flex items-center gap-1.5 px-2 py-2 border-b border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900">
           <button
             (click)="leftPanelWidth.set('0px')"
@@ -137,35 +135,70 @@
           </div>
         </div>
 
-        <!-- Scrollable content -->
-        <div class="flex-1 overflow-y-auto scrollbar-thin p-4 flex flex-col gap-6">
-          <app-file-list
-            title="Input files"
-            [files]="inputFiles()"
-            emptyMessage="Upload files for the agent to read"
-            [uploadFn]="uploadFile"
-            [downloadFn]="downloadFile"
-            [deleteFn]="deleteFile"
-            [viewFn]="readFile"
-            [saveFn]="saveFile"
-            (refreshed)="refreshInputFiles()"
-            (fileOpened)="expandLeftPanel()"
-          />
+        <!-- Left panel body: sessions pane + separator + files pane -->
+        <div class="flex-1 min-h-0 overflow-hidden flex flex-col">
 
-          <div class="border-t border-gray-200 dark:border-zinc-700"></div>
+          <!-- Sessions pane (resizable via drag) -->
+          <div
+            class="flex-none overflow-hidden bg-white dark:bg-zinc-950"
+            [style.height.px]="sessionsPanelHeightPx()"
+          >
+            <app-sessions-list
+              class="h-full flex flex-col"
+              [sessions]="sessions()"
+              [activeSessionId]="sessionId()"
+              (sessionSelected)="switchToSession($event)"
+              (sessionRenamed)="renameSession($event.sessionId, $event.name)"
+              (sessionDeleted)="deleteSession($event)"
+              (newSessionRequested)="createNewSession()"
+            />
+          </div>
 
-          <app-file-list
-            title="Output files"
-            [files]="outputFiles()"
-            emptyMessage="Agent-generated files appear here"
-            [allowUpload]="false"
-            [downloadFn]="downloadFile"
-            [deleteFn]="deleteFile"
-            [viewFn]="readFile"
-            [saveFn]="saveFile"
-            (refreshed)="refreshOutputFiles()"
-            (fileOpened)="expandLeftPanel()"
-          />
+          <!-- Draggable separator -->
+          <div
+            class="flex-none h-2.5 cursor-row-resize flex items-center justify-center
+                   bg-gray-100 dark:bg-zinc-800/60
+                   border-y border-gray-200 dark:border-zinc-700
+                   hover:bg-gray-200 dark:hover:bg-zinc-700
+                   transition-colors group select-none"
+            (pointerdown)="startDrag($event)"
+            (pointermove)="onDragMove($event)"
+            (pointerup)="endDrag($event)"
+            (pointercancel)="endDrag($event)"
+          >
+            <div class="w-6 h-0.5 rounded-full bg-gray-300 dark:bg-zinc-600 opacity-60 group-hover:opacity-100 transition-opacity"></div>
+          </div>
+
+          <!-- Files pane (takes remaining space, scrollable) -->
+          <div class="flex-1 min-h-0 overflow-y-auto scrollbar-thin p-4 flex flex-col gap-6 bg-gray-50 dark:bg-zinc-900">
+            <app-file-list
+              title="Input files"
+              [files]="inputFiles()"
+              emptyMessage="Upload files for the agent to read"
+              [uploadFn]="uploadFile"
+              [downloadFn]="downloadFile"
+              [deleteFn]="deleteFile"
+              [viewFn]="readFile"
+              [saveFn]="saveFile"
+              (refreshed)="refreshInputFiles()"
+              (fileOpened)="expandLeftPanel()"
+            />
+
+            <div class="border-t border-gray-200 dark:border-zinc-700"></div>
+
+            <app-file-list
+              title="Output files"
+              [files]="outputFiles()"
+              emptyMessage="Agent-generated files appear here"
+              [allowUpload]="false"
+              [downloadFn]="downloadFile"
+              [deleteFn]="deleteFile"
+              [viewFn]="readFile"
+              [saveFn]="saveFile"
+              (refreshed)="refreshOutputFiles()"
+              (fileOpened)="expandLeftPanel()"
+            />
+          </div>
         </div>
       </div>
     </aside>
@@ -179,6 +212,7 @@
         (sessionCreated)="onSessionCreated($event)"
         (filesChanged)="onFilesChanged($event)"
         (settingsRequired)="settingsOpen.set(true)"
+        (messagesSnapshot)="onMessagesSnapshot($event)"
       />
     </main>
   </div>

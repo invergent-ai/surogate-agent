@@ -1,10 +1,11 @@
 import {
-  Component, Input, Output, EventEmitter, signal, ViewChild, ElementRef
+  Component, Input, Output, EventEmitter, signal, ViewChild, ElementRef, inject
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Observable } from 'rxjs';
 import { FileInfo } from '../../../core/models/skill.models';
 import { FileViewerComponent } from '../file-viewer/file-viewer.component';
+import { ConfirmDialogService } from '../../../core/services/confirm-dialog.service';
 
 const TEXT_EXTENSIONS = new Set([
   'txt', 'md', 'markdown', 'csv', 'tsv', 'json', 'yaml', 'yml',
@@ -36,6 +37,8 @@ export class FileListComponent {
 
   @Output() refreshed   = new EventEmitter<void>();
   @Output() fileOpened  = new EventEmitter<void>();
+
+  private confirmSvc = inject(ConfirmDialogService);
 
   dragging    = signal(false);
   uploading   = signal(false);
@@ -128,11 +131,20 @@ export class FileListComponent {
     });
   }
 
-  delete(name: string) {
+  async delete(name: string) {
     if (!this.deleteFn) return;
+    const ok = await this.confirmSvc.confirm(
+      `Delete "${name}"? This cannot be undone.`,
+      { title: 'Delete file' },
+    );
+    if (!ok) return;
     this.deleting.set(name);
     this.deleteFn(name).subscribe({
-      next:  () => { this.deleting.set(null); this.refreshed.emit(); },
+      next:  () => {
+        this.deleting.set(null);
+        if (this.openedFile()?.name === name) this.openedFile.set(null);
+        this.refreshed.emit();
+      },
       error: () => { this.deleting.set(null); },
     });
   }

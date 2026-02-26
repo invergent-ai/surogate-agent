@@ -47,7 +47,7 @@ export class SkillTabsComponent {
       this.tabs.set(newTabs);
       this.setActive(newTabs.length - 1);
     }
-    this.activeSkillChange.emit(name);
+    // setActive already emitted; no second emit needed
   }
 
   setActive(index: number): void {
@@ -71,6 +71,31 @@ export class SkillTabsComponent {
     this.activeIndex.set(newActive);
     this.pageStart.set(Math.max(0, Math.min(this.pageStart(), tabs.length - PAGE_SIZE)));
     if (newActive >= 0) this.activeSkillChange.emit(tabs[newActive]?.name ?? '');
+  }
+
+  /** Close the tab for a specific skill name (called externally when skill is deleted). */
+  closeTabByName(name: string): void {
+    const idx = this.tabs().findIndex(t => t.name === name);
+    if (idx < 0) return;
+    const wasActive = idx === this.activeIndex();
+    const tabs = [...this.tabs()];
+    tabs.splice(idx, 1);
+    this.tabs.set(tabs);
+
+    let newActive = this.activeIndex();
+    if (newActive === idx) {
+      newActive = Math.min(idx, tabs.length - 1);
+      this.activeIndex.set(newActive);
+    } else if (newActive > idx) {
+      this.activeIndex.set(newActive - 1);
+    }
+    this.pageStart.set(Math.max(0, Math.min(this.pageStart(), Math.max(0, tabs.length - PAGE_SIZE))));
+
+    // Only emit if the active tab changed — avoids unnecessary chat clears
+    if (wasActive) {
+      const newName = newActive >= 0 ? (tabs[newActive]?.name ?? '') : '';
+      this.activeSkillChange.emit(newName);
+    }
   }
 
   scrollLeft(): void {

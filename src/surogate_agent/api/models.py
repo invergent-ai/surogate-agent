@@ -4,7 +4,7 @@ Pydantic request/response models for the surogate-agent REST API.
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
@@ -79,3 +79,37 @@ class WorkspaceResponse(BaseModel):
     skill: str
     workspace_dir: str
     files: list[FileInfo]
+
+
+# ---------------------------------------------------------------------------
+# Session metadata models
+# ---------------------------------------------------------------------------
+
+
+class SessionMetaCreate(BaseModel):
+    session_id: str
+    name: str
+
+
+class SessionMetaUpdate(BaseModel):
+    name: str
+
+
+class SessionMetaResponse(BaseModel):
+    session_id: str
+    name: str
+    created_at: str  # ISO datetime string
+
+
+# ---------------------------------------------------------------------------
+# Chat history models
+# ---------------------------------------------------------------------------
+
+
+class ChatHistorySaveRequest(BaseModel):
+    messages: list[Any]
+
+
+class ChatHistoryResponse(BaseModel):
+    session_id: str
+    messages: list[Any]

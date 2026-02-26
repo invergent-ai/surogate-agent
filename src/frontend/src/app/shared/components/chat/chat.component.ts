@@ -37,12 +37,14 @@ export class ChatComponent implements OnDestroy {
   @Input() compact = false;
   @Input() placeholder = 'Type a message…';
 
-  @Output() sessionCreated   = new EventEmitter<string>();
-  @Output() skillDetected    = new EventEmitter<string>();
-  @Output() filesChanged     = new EventEmitter<string[]>();
-  @Output() settingsRequired = new EventEmitter<void>();
+  @Output() sessionCreated    = new EventEmitter<string>();
+  @Output() skillDetected     = new EventEmitter<string>();
+  @Output() filesChanged      = new EventEmitter<string[]>();
+  @Output() settingsRequired  = new EventEmitter<void>();
   /** Emitted with true when the first message is added, false when messages are cleared. */
-  @Output() hasMessages      = new EventEmitter<boolean>();
+  @Output() hasMessages       = new EventEmitter<boolean>();
+  /** Emitted after each streaming turn completes with the full message list (timestamps serialized to ISO strings). */
+  @Output() messagesSnapshot  = new EventEmitter<unknown[]>();
 
   messages = signal<ChatMessage[]>([]);
   streaming = signal(false);
@@ -157,7 +159,14 @@ export class ChatComponent implements OnDestroy {
         this.finalizeAssistant(assistantId, [{ type: 'error', text: String(err?.message ?? err) }]);
         this.streaming.set(false);
       },
-      complete: () => this.streaming.set(false),
+      complete: () => {
+        this.streaming.set(false);
+        const snapshot = this.messages().map(m => ({
+          ...m,
+          timestamp: m.timestamp instanceof Date ? m.timestamp.toISOString() : m.timestamp,
+        }));
+        if (snapshot.length > 0) this.messagesSnapshot.emit(snapshot);
+      },
     });
   }
 
@@ -236,6 +245,15 @@ export class ChatComponent implements OnDestroy {
   clearMessages() {
     this.messages.set([]);
     this.currentSessionId.set('');
+  }
+
+  /** Restore a previously saved session: replay messages and set the session ID. */
+  restoreSession(msgs: ChatMessage[], sessionId: string) {
+    this.messages.set(msgs.map(m => ({
+      ...m,
+      timestamp: m.timestamp instanceof Date ? m.timestamp : new Date(m.timestamp as unknown as string),
+    })));
+    this.currentSessionId.set(sessionId);
   }
 
   onKeydown(e: KeyboardEvent) {
