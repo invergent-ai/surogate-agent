@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/invergent-ai/surogate-agent/compare/v1.1.0...v1.2.0) (2026-02-27)
+
+
+### Features
+
+* [Core] OpenRouter support ([13036ed](https://github.com/invergent-ai/surogate-agent/commit/13036ed83303113d21e2f6f25677cab2df66fbc0))
+
 ## [1.1.0](https://github.com/invergent-ai/surogate-agent/compare/v1.0.0...v1.1.0) (2026-02-26)
 
 
