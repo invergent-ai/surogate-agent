@@ -23,6 +23,7 @@ class ChatRequest(BaseModel):
     user_id: str = ""
     allow_execute: bool = False
     api_key: str = ""  # client-supplied key; used only when server env var is absent
+    openrouter_provider: str = ""  # comma-separated OpenRouter provider name(s), e.g. "MiniMax"
 
 
 class SkillCreateRequest(BaseModel):

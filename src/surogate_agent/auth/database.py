@@ -69,6 +69,8 @@ def _migrate_users_table() -> None:
             conn.execute(text("ALTER TABLE users ADD COLUMN model VARCHAR(255) DEFAULT ''"))
         if "api_key" not in cols:
             conn.execute(text("ALTER TABLE users ADD COLUMN api_key VARCHAR(1000) DEFAULT ''"))
+        if "openrouter_provider" not in cols:
+            conn.execute(text("ALTER TABLE users ADD COLUMN openrouter_provider VARCHAR(255) DEFAULT ''"))
 
 
 def create_tables() -> None:

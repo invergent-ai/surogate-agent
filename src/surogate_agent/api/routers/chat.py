@@ -127,6 +127,16 @@ async def _stream_chat(
         # from skill frontmatter inside create_agent()).
         effective_allow_execute = True if role == Role.DEVELOPER else req.allow_execute
         model = req.model or settings.model
+
+        # Convert comma-separated provider string to OpenRouter provider dict.
+        # e.g. "MiniMax" → {"order": ["MiniMax"]}
+        #      "MiniMax,Fireworks" → {"order": ["MiniMax", "Fireworks"]}
+        provider_str = req.openrouter_provider.strip()
+        openrouter_provider = (
+            {"order": [p.strip() for p in provider_str.split(",") if p.strip()]}
+            if provider_str else None
+        )
+
         config = AgentConfig(
             model=model,
             user_skills_dir=settings.skills_dir,
@@ -134,6 +144,7 @@ async def _stream_chat(
             dev_workspace_dir=settings.workspace_dir,
             allow_execute=effective_allow_execute,
             api_key=req.api_key,
+            openrouter_provider=openrouter_provider,
         )
 
         # Session setup
@@ -347,6 +358,7 @@ async def chat_endpoint(
         "user_id": current_user.username,
         "model": req.model or (current_user.model or ""),
         "api_key": req.api_key or (current_user.api_key or ""),
+        "openrouter_provider": req.openrouter_provider or (current_user.openrouter_provider or ""),
     })
 
     async def generator():

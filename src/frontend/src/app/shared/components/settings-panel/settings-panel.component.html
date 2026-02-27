@@ -87,6 +87,34 @@
           </div>
           <p class="text-xs text-gray-400 dark:text-zinc-500">Your key is stored securely per account on the server.</p>
         </div>
+
+        <!-- OpenRouter Provider (optional) -->
+        <div class="flex flex-col gap-1.5">
+          <div class="flex items-center gap-1.5">
+            <label for="settings-provider" class="text-sm font-medium text-gray-700 dark:text-zinc-300">
+              OpenRouter Provider
+            </label>
+            <div class="relative group">
+              <svg class="w-3.5 h-3.5 text-gray-400 dark:text-zinc-500 cursor-help" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"/>
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 16v-4m0-4h.01"/>
+              </svg>
+              <div class="pointer-events-none absolute left-1/2 bottom-full mb-2 -translate-x-1/2 w-64 rounded-lg bg-gray-900 dark:bg-zinc-700 px-3 py-2 text-xs text-white shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                When using an OpenRouter model (e.g. <span class="font-mono">minimax/MiniMax-M2.5</span>), enter a preferred provider name to route requests to a specific backend. Leave blank for automatic routing.
+                <div class="absolute left-1/2 top-full -translate-x-1/2 border-4 border-transparent border-t-gray-900 dark:border-t-zinc-700"></div>
+              </div>
+            </div>
+          </div>
+          <input
+            id="settings-provider"
+            name="settings-provider"
+            [(ngModel)]="draftProvider"
+            placeholder="e.g. MiniMax"
+            autocomplete="off"
+            class="w-full rounded-lg border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-50 placeholder:text-gray-400 dark:placeholder:text-zinc-500 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 dark:focus:ring-amber-500 focus:border-transparent transition-colors"
+          />
+          <p class="text-xs text-gray-400 dark:text-zinc-500">Optional. Only applies when using an OpenRouter model.</p>
+        </div>
       </div>
 
       <!-- Footer -->

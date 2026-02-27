@@ -105,5 +105,5 @@ def update_me(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> User:
-    """Update the current user's model and API key."""
-    return update_user_settings(db, current_user, body.model, body.api_key)
+    """Update the current user's model, API key, and OpenRouter provider."""
+    return update_user_settings(db, current_user, body.model, body.api_key, body.openrouter_provider)

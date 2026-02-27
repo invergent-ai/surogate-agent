@@ -175,6 +175,61 @@ class TestCreateAgent:
 
 
 # ---------------------------------------------------------------------------
+# _build_llm unit tests
+# ---------------------------------------------------------------------------
+
+class TestBuildLlm:
+    """Tests for _build_llm() — langchain_openai is not installed in the test
+    environment so we inject a mock via sys.modules."""
+
+    def _mock_openai(self):
+        """Return (mock_module, mock_ChatOpenAI_cls)."""
+        mock_cls = MagicMock()
+        mock_module = MagicMock()
+        mock_module.ChatOpenAI = mock_cls
+        return mock_module, mock_cls
+
+    def test_openrouter_no_provider(self, monkeypatch):
+        monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
+        mock_module, mock_cls = self._mock_openai()
+        with patch.dict("sys.modules", {"langchain_openai": mock_module}):
+            from surogate_agent.core.agent import _build_llm
+            _build_llm("minimax/MiniMax-M2.5")
+        mock_cls.assert_called_once()
+        kw = mock_cls.call_args.kwargs
+        assert kw["model"] == "minimax/MiniMax-M2.5"
+        assert kw["base_url"] == "https://openrouter.ai/api/v1"
+        assert "model_kwargs" not in kw
+
+    def test_openrouter_with_provider_order(self, monkeypatch):
+        monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
+        mock_module, mock_cls = self._mock_openai()
+        provider = {"order": ["MiniMax"], "allow_fallbacks": False}
+        with patch.dict("sys.modules", {"langchain_openai": mock_module}):
+            from surogate_agent.core.agent import _build_llm
+            _build_llm("minimax/MiniMax-M2.5", openrouter_provider=provider)
+        mock_cls.assert_called_once()
+        kw = mock_cls.call_args.kwargs
+        assert kw["model_kwargs"] == {"extra_body": {"provider": provider}}
+
+    def test_openrouter_api_key_from_arg(self, monkeypatch):
+        monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+        mock_module, mock_cls = self._mock_openai()
+        with patch.dict("sys.modules", {"langchain_openai": mock_module}):
+            from surogate_agent.core.agent import _build_llm
+            _build_llm("google/gemini-2.0-flash-001", api_key="explicit-key")
+        kw = mock_cls.call_args.kwargs
+        assert kw["api_key"] == "explicit-key"
+        assert kw["base_url"] == "https://openrouter.ai/api/v1"
+
+    def test_openrouter_missing_key_raises(self, monkeypatch):
+        monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+        from surogate_agent.core.agent import _build_llm
+        with pytest.raises(ValueError, match="OPENROUTER_API_KEY"):
+            _build_llm("minimax/MiniMax-M2.5")
+
+
+# ---------------------------------------------------------------------------
 # _user_skills_need_execute unit tests
 # ---------------------------------------------------------------------------
 

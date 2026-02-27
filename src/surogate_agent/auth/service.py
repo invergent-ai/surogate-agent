@@ -81,10 +81,13 @@ def authenticate_user(db: Session, username: str, password: str) -> User | None:
 # User settings
 # ---------------------------------------------------------------------------
 
-def update_user_settings(db: Session, user: User, model: str, api_key: str) -> User:
-    """Persist the user's preferred LLM model and API key."""
+def update_user_settings(
+    db: Session, user: User, model: str, api_key: str, openrouter_provider: str = ""
+) -> User:
+    """Persist the user's preferred LLM model, API key, and OpenRouter provider."""
     user.model = model.strip()
     user.api_key = api_key.strip()
+    user.openrouter_provider = openrouter_provider.strip()
     db.commit()
     db.refresh(user)
     return user

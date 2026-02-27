@@ -30,6 +30,11 @@ class User(Base):
     api_key: Mapped[Optional[str]] = mapped_column(
         String(1000), nullable=True, default="", server_default=""
     )
+    # OpenRouter provider preference — comma-separated provider name(s), e.g. "MiniMax"
+    # or "MiniMax,Fireworks".  Blank means no preference (OpenRouter default routing).
+    openrouter_provider: Mapped[Optional[str]] = mapped_column(
+        String(255), nullable=True, default="", server_default=""
+    )
 
     def __repr__(self) -> str:
         return f"<User id={self.id} username={self.username!r} role={self.role!r}>"

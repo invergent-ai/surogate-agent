@@ -15,6 +15,7 @@ export const PRESET_MODELS = [
   'gpt-4.1',
   'o3',
   'o4-mini',
+  'minimax/MiniMax-M2.5',
 ];
 
 @Component({
@@ -32,17 +33,19 @@ export class SettingsPanelComponent implements OnChanges {
 
   presetModels = PRESET_MODELS;
 
-  draftModel  = '';
-  draftApiKey = '';
-  showKey     = false;
-  saving      = signal(false);
-  saveError   = signal('');
+  draftModel    = '';
+  draftApiKey   = '';
+  draftProvider = '';
+  showKey       = false;
+  saving        = signal(false);
+  saveError     = signal('');
 
   ngOnChanges(changes: SimpleChanges): void {
     if (changes['open']?.currentValue) {
-      this.draftModel  = this.settings.model();
-      this.draftApiKey = this.settings.apiKey();
-      this.showKey     = false;
+      this.draftModel    = this.settings.model();
+      this.draftApiKey   = this.settings.apiKey();
+      this.draftProvider = this.settings.openrouterProvider();
+      this.showKey       = false;
       this.saveError.set('');
     }
   }
@@ -59,7 +62,7 @@ export class SettingsPanelComponent implements OnChanges {
     if (!this.canSave) return;
     this.saving.set(true);
     this.saveError.set('');
-    this.settings.saveSettings(this.draftModel.trim(), this.draftApiKey.trim()).subscribe({
+    this.settings.saveSettings(this.draftModel.trim(), this.draftApiKey.trim(), this.draftProvider.trim()).subscribe({
       next: () => {
         this.saving.set(false);
         this.toast.success('Settings saved');

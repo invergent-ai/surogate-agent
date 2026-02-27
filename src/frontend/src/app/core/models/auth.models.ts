@@ -24,6 +24,7 @@ export interface UserResponse {
   created_at: string;
   model: string;
   api_key: string;
+  openrouter_provider: string;
 }
 
 export interface UserInfo {

@@ -65,6 +65,11 @@ class AgentConfig:
     # Takes effect when the corresponding env var (ANTHROPIC_API_KEY / OPENAI_API_KEY)
     # is not set in the server environment.
     api_key: str = ""
+    # OpenRouter provider routing object, passed verbatim as the ``provider`` field in
+    # the request body.  Only used when the model string contains ``/`` (OpenRouter).
+    # Example: {"order": ["MiniMax"], "allow_fallbacks": False}
+    # See https://openrouter.ai/docs for available fields.
+    openrouter_provider: dict | None = None
 
     def __post_init__(self) -> None:
         # Always include the bundled builtin skills directory.

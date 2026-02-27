@@ -57,6 +57,7 @@ class UserSettingsUpdate(BaseModel):
     """Payload for PATCH/PUT /auth/me — update per-user LLM settings."""
     model: str
     api_key: str
+    openrouter_provider: str = ""
 
 
 class UserResponse(BaseModel):
@@ -71,8 +72,9 @@ class UserResponse(BaseModel):
     # Per-user LLM configuration (empty string when not set)
     model: str = ""
     api_key: str = ""
+    openrouter_provider: str = ""
 
-    @field_validator("model", "api_key", mode="before")
+    @field_validator("model", "api_key", "openrouter_provider", mode="before")
     @classmethod
     def _none_to_empty(cls, v: Optional[str]) -> str:
         return v or ""

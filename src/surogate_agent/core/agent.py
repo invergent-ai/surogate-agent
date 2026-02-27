@@ -32,17 +32,29 @@ def _import_deepagents():
         ) from exc
 
 
-def _build_llm(model: str, api_key: str = ""):
+def _build_llm(model: str, api_key: str = "", openrouter_provider: dict | None = None):
     """Instantiate a LangChain chat model from a model-string shorthand.
 
     Parameters
     ----------
     model:
-        LangChain model string, e.g. ``"claude-sonnet-4-6"`` or ``"gpt-4o"``.
+        LangChain model string.  Routing is determined by prefix/format:
+
+        - ``"claude-*"`` → Anthropic (requires ``ANTHROPIC_API_KEY``)
+        - ``"gpt-*"``, ``"o1-*"``, ``"o3-*"`` → OpenAI (requires ``OPENAI_API_KEY``)
+        - ``"<provider>/<model>"`` (contains ``/``) → OpenRouter
+          (requires ``OPENROUTER_API_KEY``).
+          Examples: ``"minimax/MiniMax-M2.5"``, ``"anthropic/claude-3-5-sonnet"``
+
     api_key:
         API key supplied at request time (from the user's stored settings).
         The user-supplied key takes precedence over the server-side
         environment variable, allowing each user to use their own key.
+    openrouter_provider:
+        Optional OpenRouter provider routing object.  Passed verbatim as the
+        ``provider`` field in the request body — only applied for OpenRouter
+        (``"/"`` in the model string).
+        Example: ``{"order": ["MiniMax"], "allow_fallbacks": False}``
     """
     log.debug("building LLM: model=%s has_key=%s", model, bool(api_key))
     if model.startswith("claude"):
@@ -75,9 +87,44 @@ def _build_llm(model: str, api_key: str = ""):
             raise ImportError(
                 "Install langchain-openai: pip install 'surogate-agent[openai]'"
             )
+    if "/" in model:
+        # OpenRouter: all models are identified as "provider/model-name".
+        # Examples: "minimax/MiniMax-M2.5", "anthropic/claude-3-5-sonnet",
+        #           "google/gemini-2.0-flash-001"
+        # OpenRouter exposes an OpenAI-compatible API, so ChatOpenAI works.
+        resolved_key = api_key or os.environ.get("OPENROUTER_API_KEY", "")
+        if not resolved_key:
+            raise ValueError(
+                "OPENROUTER_API_KEY is not configured. Set it as a server "
+                "environment variable, or enter your API key in Settings."
+            )
+        try:
+            from langchain_openai import ChatOpenAI  # type: ignore
+            log.debug(
+                "instantiated ChatOpenAI (OpenRouter): %s provider=%s",
+                model, openrouter_provider,
+            )
+            kwargs: dict = dict(
+                model=model,
+                api_key=resolved_key,
+                base_url="https://openrouter.ai/api/v1",
+            )
+            if openrouter_provider:
+                # `provider` is an OpenRouter-specific request body field.
+                # It must be passed via `extra_body` so the OpenAI client
+                # merges it into the JSON payload rather than treating it
+                # as a Python kwarg (which raises TypeError).
+                kwargs["model_kwargs"] = {"extra_body": {"provider": openrouter_provider}}
+            return ChatOpenAI(**kwargs)
+        except ImportError:
+            raise ImportError(
+                "Install langchain-openai: pip install 'surogate-agent[openai]'"
+            )
     raise ValueError(
-        f"Unknown model prefix for '{model}'. "
-        "Pass a LangChain-compatible model string or set SUROGATE_MODEL."
+        f"Unknown model '{model}'. "
+        "Use a Claude model ('claude-sonnet-4-6'), an OpenAI model ('gpt-4o'), "
+        "or an OpenRouter model in 'provider/model' format ('minimax/MiniMax-M2.5'). "
+        "You can also set the SUROGATE_MODEL environment variable."
     )
 
 
@@ -160,7 +207,7 @@ def create_agent(
     log.debug("total skill sources: %d — %s", len(skill_sources), skill_sources)
 
     create_deep_agent = _import_deepagents()
-    llm = _build_llm(config.model, api_key=config.api_key)
+    llm = _build_llm(config.model, api_key=config.api_key, openrouter_provider=config.openrouter_provider)
 
     # Choose backend based on whether shell execution is needed.
     #
