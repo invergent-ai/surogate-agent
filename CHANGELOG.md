@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.1.0](https://github.com/invergent-ai/surogate-agent/compare/v1.0.0...v1.1.0) (2026-02-26)
+
+
+### Features
+
+* [Frontend] Delete confirmations ([0a6ca2a](https://github.com/invergent-ai/surogate-agent/commit/0a6ca2a8ed6d2100970bbc25c50fa9020de69db0))
+* [Frontend] File viewer & full-screen mode ([9c72141](https://github.com/invergent-ai/surogate-agent/commit/9c72141ceec87798d0c3ca84bc8f07fc10e6abbd))
+* [Frontend] Multiple file uploads ([7003a64](https://github.com/invergent-ai/surogate-agent/commit/7003a648ae969f1777df6b979894096a2981fa26))
+* [Frontend] PDF,Doc,Docx and image viewers ([33eb9ed](https://github.com/invergent-ai/surogate-agent/commit/33eb9edf6a1cdb22878f7587e23aa1b7cf1e7e3a))
+* [Frontend] Stop agent button ([ad894d7](https://github.com/invergent-ai/surogate-agent/commit/ad894d7ba06dfb4ca68d2d2bae42c960fca2bb1d))
+* UI tweaks ([9c25dc0](https://github.com/invergent-ai/surogate-agent/commit/9c25dc08213079e7ff88369912c1989aef6dbc5b))
+* User session management ([fa5177c](https://github.com/invergent-ai/surogate-agent/commit/fa5177cf2e659772b7cedf4e70bb159473c06b47))
+
+
+### Bug Fixes
+
+* [Frontend] Fixed bad workspace folder behaviour ([7261661](https://github.com/invergent-ai/surogate-agent/commit/726166163c1f8cb322571adfac90d901ef5f4443))
+* [Frontend] fixed test sessions ([a8b7bc6](https://github.com/invergent-ai/surogate-agent/commit/a8b7bc66d641b626f3780ee30922674db7470b7c))
+* [Frontend] pointer cursors on clickable items and disable label text selection ([1adbade](https://github.com/invergent-ai/surogate-agent/commit/1adbade96aa8a12eb3b7a2af7572b045f6c270ba))
+* [Frontend] Skill tabs deletion and left panel interaction ([4ca28f7](https://github.com/invergent-ai/surogate-agent/commit/4ca28f79386982c8002f1195a4e09613eca07c4b))
+* [Frontend] synced tab to skill-browser to workspace interaction ([e61e53d](https://github.com/invergent-ai/surogate-agent/commit/e61e53d0d8b25148e6842777ba7c647e1dd36bcb))
+
 ## [1.0.0](https://github.com/invergent-ai/surogate-agent/compare/v0.1.2...v1.0.0) (2026-02-25)
 
 
