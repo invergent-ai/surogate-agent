@@ -79,6 +79,12 @@ export class ChatComponent implements OnDestroy {
   private _boundMouseMove?: (e: MouseEvent) => void;
   private _boundMouseUp?:   () => void;
 
+  // Input history — behaves like a terminal (Up/Down to browse sent messages).
+  private readonly HISTORY_LIMIT = 50;
+  private _sentHistory: string[] = [];
+  private _historyIndex = -1;   // -1 = not browsing (showing draft)
+  private _draftText    = '';   // saved draft while browsing history
+
   onDividerMouseDown(e: MouseEvent) {
     e.preventDefault();
     this._dragStartY = e.clientY;
@@ -123,6 +129,14 @@ export class ChatComponent implements OnDestroy {
   send() {
     const text = this.inputText().trim();
     if (!text || this.streaming()) return;
+
+    // Append to history, skip exact duplicate of the last entry.
+    if (!this._sentHistory.length || this._sentHistory[this._sentHistory.length - 1] !== text) {
+      this._sentHistory.push(text);
+      if (this._sentHistory.length > this.HISTORY_LIMIT) this._sentHistory.shift();
+    }
+    this._historyIndex = -1;
+    this._draftText    = '';
 
     // Guard: settings must be configured before chatting
     if (!this.settings.isConfigured()) {
@@ -278,7 +292,47 @@ export class ChatComponent implements OnDestroy {
   }
 
   onKeydown(e: KeyboardEvent) {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); this.send(); }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); this.send(); return; }
+
+    if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+      const ta = e.target as HTMLTextAreaElement;
+      const goBack = e.key === 'ArrowUp';
+
+      // Only intercept when the cursor is on the first (Up) or last (Down) line
+      // so normal multi-line caret movement is unaffected.
+      const beforeCursor = ta.value.substring(0, ta.selectionStart);
+      const afterCursor  = ta.value.substring(ta.selectionStart);
+      const onFirstLine  = !beforeCursor.includes('\n');
+      const onLastLine   = !afterCursor.includes('\n');
+
+      if (goBack && onFirstLine && this._sentHistory.length) {
+        e.preventDefault();
+        if (this._historyIndex === -1) this._draftText = this.inputText();
+        this._historyIndex = this._historyIndex === -1
+          ? this._sentHistory.length - 1
+          : Math.max(0, this._historyIndex - 1);
+        this._applyHistory();
+      } else if (!goBack && this._historyIndex !== -1 && onLastLine) {
+        e.preventDefault();
+        const next = this._historyIndex + 1;
+        if (next >= this._sentHistory.length) {
+          this._historyIndex = -1;
+          this.inputText.set(this._draftText);
+        } else {
+          this._historyIndex = next;
+          this._applyHistory();
+        }
+      }
+    }
+  }
+
+  private _applyHistory() {
+    this.inputText.set(this._sentHistory[this._historyIndex]);
+    // Move caret to end on next tick (after Angular updates the DOM value).
+    setTimeout(() => {
+      const ta = document.activeElement as HTMLTextAreaElement | null;
+      if (ta?.tagName === 'TEXTAREA') ta.setSelectionRange(ta.value.length, ta.value.length);
+    }, 0);
   }
 
   private scrollToBottom() {
