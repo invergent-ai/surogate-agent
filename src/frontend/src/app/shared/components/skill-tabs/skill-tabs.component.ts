@@ -46,6 +46,16 @@ export class SkillTabsComponent {
     this.activeIndex.set(-1);
   }
 
+  /** Add a tab for *name* without changing the active tab or emitting activeSkillChange.
+   *  Used when a skill is detected from a tool-call so the tab appears for later
+   *  editing, but the developer's current focus is not disrupted. */
+  ensureTab(name: string): void {
+    const existing = this.tabs().findIndex(t => t.name === name);
+    if (existing < 0) {
+      this.tabs.set([...this.tabs(), { name, dirty: false }]);
+    }
+  }
+
   openOrFocus(name: string): void {
     const existing = this.tabs().findIndex(t => t.name === name);
     if (existing >= 0) {

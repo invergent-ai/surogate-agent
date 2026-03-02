@@ -262,7 +262,10 @@ export class ChatComponent implements OnDestroy {
 
   clearMessages() {
     this.messages.set([]);
-    this.currentSessionId.set('');
+    // Generate a fresh ID so the backend opens a new LangGraph thread rather
+    // than resuming the old checkpoint — prevents stale context after a skill switch.
+    const freshId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    this.currentSessionId.set(freshId);
   }
 
   /** Restore a previously saved session: replay messages and set the session ID. */

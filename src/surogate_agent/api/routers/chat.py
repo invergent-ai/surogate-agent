@@ -154,10 +154,14 @@ async def _stream_chat(
             dev_skill = req.skill.strip()
             config.dev_workspace_dir.mkdir(parents=True, exist_ok=True)
             if dev_skill:
-                thread_id = f"dev:{dev_skill}"
+                # Use the frontend-provided session_id as the thread_id when
+                # available — clearMessages() on the frontend generates a fresh
+                # ID to force a new LangGraph thread (no stale checkpoint context).
+                # Fall back to the stable per-skill ID on the very first message.
+                thread_id = req.session_id.strip() if req.session_id.strip() else f"dev:{dev_skill}"
                 skill_workspace = config.dev_workspace_dir / dev_skill
             else:
-                thread_id = f"dev:{int(time.time())}"
+                thread_id = req.session_id.strip() if req.session_id.strip() else f"dev:{int(time.time())}"
                 skill_workspace = config.dev_workspace_dir
             skill_workspace.mkdir(parents=True, exist_ok=True)
             from surogate_agent.core.session import Session

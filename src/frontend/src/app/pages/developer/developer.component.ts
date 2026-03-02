@@ -159,7 +159,10 @@ export class DeveloperComponent {
 
   onSkillDetected(name: string) {
     if (this.skillTabs) {
-      this.skillTabs.openOrFocus(name);
+      // ensureTab adds the tab silently — does NOT change activeSkill or clear
+      // the chat, so an agent writing a skill file mid-stream can't hijack the
+      // developer's current skill focus.
+      this.skillTabs.ensureTab(name);
       if (this.skillsBrowser) this.skillsBrowser.loadSkills();
     }
   }
