@@ -234,20 +234,41 @@ def create_agent(
                 "auto-activating LocalShellBackend: a user skill declared 'execute' in allowed-tools"
             )
 
+    # Build per-role path permission lists for the guarded backends.
+    # DEVELOPER: read-write for user skills + dev workspace;
+    #            read-only for builtin skills + user sessions.
+    # USER:      read-write for their session workspace only;
+    #            read-only for user skills + builtin skills.
+    if role == Role.DEVELOPER:
+        guard_rw = [config.user_skills_dir.resolve(), config.dev_workspace_dir.resolve()]
+        guard_ro = [_DEFAULT_SKILLS_DIR.resolve(), config.sessions_dir.resolve()]
+    else:
+        guard_rw = [session.workspace_dir.resolve()]
+        guard_ro = [config.user_skills_dir.resolve(), _DEFAULT_SKILLS_DIR.resolve()]
+
     backend = None
     try:
+        from surogate_agent.backends.guard import (
+            make_guarded_filesystem_backend,
+            make_guarded_local_shell_backend,
+        )
         if effective_allow_execute:
-            from deepagents.backends.local_shell import LocalShellBackend
-            backend = LocalShellBackend(
+            backend = make_guarded_local_shell_backend(
+                rw_paths=guard_rw,
+                ro_paths=guard_ro,
                 root_dir=Path.cwd(),
                 virtual_mode=False,
                 inherit_env=True,   # agent needs PATH, API keys, etc.
             )
-            log.debug("backend: LocalShellBackend (allow_execute=%s)", config.allow_execute)
+            log.debug("backend: GuardedLocalShellBackend (allow_execute=%s)", config.allow_execute)
         else:
-            from deepagents.backends.filesystem import FilesystemBackend
-            backend = FilesystemBackend(root_dir=Path.cwd(), virtual_mode=False)
-            log.debug("backend: FilesystemBackend")
+            backend = make_guarded_filesystem_backend(
+                rw_paths=guard_rw,
+                ro_paths=guard_ro,
+                root_dir=Path.cwd(),
+                virtual_mode=False,
+            )
+            log.debug("backend: GuardedFilesystemBackend")
     except ImportError:
         log.warning("could not import deepagents backend — falling back to deepagents default")
         backend = None  # fall back to deepagents default
@@ -296,6 +317,7 @@ def _build_system_suffix(
 ) -> str:
     parts: list[str] = []
     skills_root = config.user_skills_dir.resolve()
+    log.trace("Active skill %s", active_skill)  # type: ignore[attr-defined]
 
     if role_ctx.is_developer:
         dev_workspace = config.dev_workspace_dir.resolve()
