@@ -6,15 +6,18 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { DomSanitizer, SafeHtml, SafeUrl, SafeResourceUrl } from '@angular/platform-browser';
 import { FullscreenService } from '../../../core/services/fullscreen.service';
+import { PythonEditorComponent } from '../python-editor/python-editor.component';
 
-type ViewMode = 'text' | 'image' | 'pdf' | 'docx' | 'unsupported';
+type ViewMode = 'text' | 'python' | 'image' | 'pdf' | 'docx' | 'unsupported';
+
+const PYTHON_EXTS = new Set(['py', 'pyw']);
 
 const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico', 'avif']);
 
 @Component({
   selector: 'app-file-viewer',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, PythonEditorComponent],
   templateUrl: './file-viewer.component.html',
 })
 export class FileViewerComponent implements OnChanges, OnDestroy {
@@ -44,7 +47,8 @@ export class FileViewerComponent implements OnChanges, OnDestroy {
     if (this.blob) {
       this._initBlob();
     } else {
-      this.viewMode.set('text');
+      const ext = this._ext();
+      this.viewMode.set(PYTHON_EXTS.has(ext) ? 'python' : 'text');
       this.editedContent.set(this.content);
       this.dirty.set(false);
     }

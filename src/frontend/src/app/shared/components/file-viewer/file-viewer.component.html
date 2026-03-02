@@ -37,6 +37,14 @@
         spellcheck="false"
       ></textarea>
     }
+    @case ('python') {
+      <app-python-editor
+        class="flex-1 min-h-0"
+        [value]="editedContent()"
+        [readOnly]="readOnly"
+        (changed)="onInput($event)"
+      ></app-python-editor>
+    }
     @case ('image') {
       <div class="flex-1 overflow-auto flex items-center justify-center p-4 bg-gray-50 dark:bg-zinc-900/60">
         <img
@@ -117,6 +125,14 @@
           spellcheck="false"
           autofocus
         ></textarea>
+      }
+      @case ('python') {
+        <app-python-editor
+          class="flex-1 min-h-0"
+          [value]="editedContent()"
+          [readOnly]="readOnly"
+          (changed)="onInput($event)"
+        ></app-python-editor>
       }
       @case ('image') {
         <div class="flex-1 overflow-auto flex items-center justify-center p-6 bg-gray-50 dark:bg-zinc-900/60">
