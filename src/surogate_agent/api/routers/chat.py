@@ -149,6 +149,7 @@ async def _stream_chat(
 
         # Session setup
         sm = SessionManager(settings.sessions_dir)
+        dev_skill = ""
         if role == Role.DEVELOPER:
             dev_skill = req.skill.strip()
             config.dev_workspace_dir.mkdir(parents=True, exist_ok=True)
@@ -213,6 +214,7 @@ async def _stream_chat(
             session=session,
             user_id=req.user_id or f"api-{role.value}",
             checkpointer=checkpointer,
+            active_skill=dev_skill,
         )
 
         invoke_config = {"configurable": {"thread_id": thread_id}}

@@ -136,6 +136,7 @@ def create_agent(
     user_id: str = "",
     metadata: dict[str, Any] | None = None,
     checkpointer=None,
+    active_skill: str = "",
 ):
     """Create a role-aware surogate deep agent.
 
@@ -251,7 +252,7 @@ def create_agent(
         log.warning("could not import deepagents backend — falling back to deepagents default")
         backend = None  # fall back to deepagents default
 
-    system_suffix = _build_system_suffix(role_ctx, config, session)
+    system_suffix = _build_system_suffix(role_ctx, config, session, active_skill)
     log.trace("system prompt suffix length: %d chars", len(system_suffix))  # type: ignore[attr-defined]
 
     graph_kwargs: dict[str, Any] = dict(
@@ -278,10 +279,20 @@ def create_agent(
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+def _read_skill_md(skills_root: Path, skill_name: str) -> str:
+    """Read SKILL.md for the named skill; return empty string if not found."""
+    path = skills_root / skill_name / "SKILL.md"
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+
+
 def _build_system_suffix(
     role_ctx: RoleContext,
     config: AgentConfig,
     session: Session,
+    active_skill: str = "",
 ) -> str:
     parts: list[str] = []
     skills_root = config.user_skills_dir.resolve()
@@ -301,10 +312,40 @@ def _build_system_suffix(
                 "Always prefer project-local installs (pip install, uv pip) over system-wide.\n"
                 "The developer has consented to shell execution for this session.\n"
             )
+        # --- Active skill context ---
+        if active_skill:
+            skill_md = _read_skill_md(config.user_skills_dir, active_skill)
+            if skill_md:
+                skill_section = (
+                    f"## Active Skill: `{active_skill}`\n\n"
+                    f"The developer has selected **`{active_skill}`** in the skill browser. "
+                    f"Use its definition below as context for all questions and requests.\n"
+                    f"If the developer explicitly names a different skill in their message "
+                    f"(e.g. \"in skill-other\"), focus on that named skill instead — "
+                    f"an explicit name always takes precedence over the browser selection.\n\n"
+                    f"```\n{skill_md}\n```\n"
+                )
+            else:
+                skill_section = (
+                    f"## Active Skill: `{active_skill}`\n\n"
+                    f"The developer has selected **`{active_skill}`** in the skill browser, "
+                    f"but its SKILL.md could not be read (the skill may not exist yet).\n"
+                )
+        else:
+            skill_section = (
+                f"## Active Skill\n\n"
+                f"No skill is currently selected in the browser.\n"
+                f"- If the developer names a skill explicitly (e.g. \"there's a bug in skill-name\"), "
+                f"focus on that skill.\n"
+                f"- If the message is ambiguous (e.g. \"there's a bug\"), ask which skill "
+                f"they are referring to before proceeding.\n"
+            )
+
         parts.append(
             f"You are operating in DEVELOPER mode.\n"
             f"You have access to the skill-development meta-skill.\n"
             f"{execute_section}\n"
+            f"{skill_section}\n"
             f"## File locations — keep these strictly separate\n\n"
             f"### 1. Skill definition files  →  {skills_root}/<skill-name>/\n"
             f"Files here ARE the skill — they ship with it and are accessible "
