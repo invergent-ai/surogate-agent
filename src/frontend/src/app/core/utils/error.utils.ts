@@ -20,7 +20,10 @@ export function extractApiErrorMessages(err: unknown, generic: string): string[]
       // @ts-ignore
       const obj = body as AnyObj;
 
-      // Your FastAPI/Pydantic-like shape: { detail: [{ msg: ... }, ...] }
+      // FastAPI HTTPException shape: { detail: "message string" }
+      if (typeof obj.detail === 'string' && obj.detail.trim()) return [obj.detail.trim()];
+
+      // FastAPI/Pydantic validation shape: { detail: [{ msg: ... }, ...] }
       if (Array.isArray(obj.detail)) {
         const msgs = obj.detail
           .map((d: any) => (typeof d?.msg === 'string' ? d.msg : null))
