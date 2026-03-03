@@ -59,10 +59,15 @@ class PermissionGuardMixin:
         **kwargs: Any,
     ) -> None:
         super().__init__(*args, **kwargs)
+        # Capture root_dir so relative paths are resolved the same way the
+        # backend resolves them (not against Python's CWD, which may differ
+        # from the configured data directory, e.g. in Docker /app vs /data).
+        self._root_dir: Path = Path(kwargs.get("root_dir", Path.cwd())).resolve()
         self._rw_paths: list[Path] = [p.resolve() for p in rw_paths]
         self._ro_paths: list[Path] = [p.resolve() for p in ro_paths]
         log.debug(
-            "PermissionGuardMixin active: rw=%s ro=%s",
+            "PermissionGuardMixin active: root=%s rw=%s ro=%s",
+            self._root_dir,
             [str(p) for p in self._rw_paths],
             [str(p) for p in self._ro_paths],
         )
@@ -73,7 +78,12 @@ class PermissionGuardMixin:
 
     def _permission_for(self, path: str | Path) -> str:
         """Return ``'rw'``, ``'ro'``, or ``'deny'`` for *path*."""
-        resolved = Path(path).resolve()
+        p = Path(path)
+        # Resolve relative paths against root_dir (same as the backend does),
+        # NOT against Python's CWD.  This is critical in deployments where the
+        # process CWD differs from the configured data directory (e.g. Docker
+        # where CWD=/app but data lives under /data/).
+        resolved = (self._root_dir / p).resolve() if not p.is_absolute() else p.resolve()
         for base in self._rw_paths:
             try:
                 resolved.relative_to(base)

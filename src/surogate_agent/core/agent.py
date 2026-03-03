@@ -236,15 +236,30 @@ def create_agent(
 
     # Build per-role path permission lists for the guarded backends.
     # DEVELOPER: read-write for user skills + dev workspace;
-    #            read-only for builtin skills + user sessions.
+    #            read-only for builtin skills + user sessions + extra skill dirs.
     # USER:      read-write for their session workspace only;
-    #            read-only for user skills + builtin skills.
+    #            read-only for user skills + builtin skills + extra skill dirs.
+    #
+    # Extra skill dirs are any dirs in config.skills_dirs beyond the builtin and
+    # user_skills_dir (e.g. tenant-wide shared skills).  They are read-only for
+    # both roles since neither should modify externally-managed skill directories.
+    extra_skill_dirs = [
+        d.resolve() for d in config.skills_dirs
+        if d.resolve() not in {_DEFAULT_SKILLS_DIR.resolve(), config.user_skills_dir.resolve()}
+    ]
     if role == Role.DEVELOPER:
         guard_rw = [config.user_skills_dir.resolve(), config.dev_workspace_dir.resolve()]
-        guard_ro = [_DEFAULT_SKILLS_DIR.resolve(), config.sessions_dir.resolve()]
+        guard_ro = [_DEFAULT_SKILLS_DIR.resolve(), config.sessions_dir.resolve()] + extra_skill_dirs
     else:
         guard_rw = [session.workspace_dir.resolve()]
-        guard_ro = [config.user_skills_dir.resolve(), _DEFAULT_SKILLS_DIR.resolve()]
+        guard_ro = [config.user_skills_dir.resolve(), _DEFAULT_SKILLS_DIR.resolve()] + extra_skill_dirs
+
+    # The backend root_dir is the parent of user_skills_dir so that relative
+    # path references used by the meta-skill (e.g. "skills/<name>/SKILL.md",
+    # "workspace/<name>/notes.md") resolve to the correct absolute locations.
+    # This is essential in Docker where the process CWD (/app) differs from
+    # the configured data directory (e.g. /data) that contains skills/ and workspace/.
+    backend_root = config.user_skills_dir.resolve().parent
 
     backend = None
     try:
@@ -256,7 +271,7 @@ def create_agent(
             backend = make_guarded_local_shell_backend(
                 rw_paths=guard_rw,
                 ro_paths=guard_ro,
-                root_dir=Path.cwd(),
+                root_dir=backend_root,
                 virtual_mode=False,
                 inherit_env=True,   # agent needs PATH, API keys, etc.
             )
@@ -265,7 +280,7 @@ def create_agent(
             backend = make_guarded_filesystem_backend(
                 rw_paths=guard_rw,
                 ro_paths=guard_ro,
-                root_dir=Path.cwd(),
+                root_dir=backend_root,
                 virtual_mode=False,
             )
             log.debug("backend: GuardedFilesystemBackend")

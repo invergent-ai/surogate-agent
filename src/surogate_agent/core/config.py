@@ -49,7 +49,7 @@ class AgentConfig:
         default_factory=lambda: os.environ.get("SUROGATE_MODEL", _DEFAULT_MODEL)
     )
     skills_dirs: list[Path] = field(default_factory=list)
-    user_skills_dir: Path = field(default_factory=lambda: Path.cwd() / "skills")
+    user_skills_dir: Path = field(default_factory=lambda: Path(os.environ.get("SUROGATE_SKILLS_DIR", "") or Path.cwd() / "skills"))
     # Developer's persistent scratch area — separate from skill definition files.
     # Survives across development sessions; never mixed into skill directories.
     dev_workspace_dir: Path = field(default_factory=lambda: Path(os.environ.get("SUROGATE_WORKSPACE_DIR", "") or Path.cwd() / "workspace"))
