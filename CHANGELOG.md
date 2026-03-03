@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.2.0](https://github.com/invergent-ai/surogate-agent/compare/v1.1.0...v1.2.0) (2026-03-02)
+
+
+### Features
+
+* [Core] OpenRouter support ([13036ed](https://github.com/invergent-ai/surogate-agent/commit/13036ed83303113d21e2f6f25677cab2df66fbc0))
+* Added context of the active skill for developer role ([90c7572](https://github.com/invergent-ai/surogate-agent/commit/90c75728803e01ed7c7533799c84a4b73f5ca5a3))
+* Hard backend guards for fileSystem and shell ([c995320](https://github.com/invergent-ai/surogate-agent/commit/c9953204c1ec3dd89cad36e00155faf475a585cb))
+* Prompt-level skill access enforcement for DEVELOPER and USER roles ([03cc93c](https://github.com/invergent-ai/surogate-agent/commit/03cc93c495d6da285cdcc63a1695ae1c03592e47))
+* Python editor ([76886f6](https://github.com/invergent-ai/surogate-agent/commit/76886f6c012849ff72fbb05be18c2226c4d3a230))
+
+
+### Bug Fixes
+
+* Fixed auto-skill detection in dev chat ([946fac8](https://github.com/invergent-ai/surogate-agent/commit/946fac8f98df90ecfdaf65cc52316232efbb4a9f))
+* Navigate through message history ([9b945e7](https://github.com/invergent-ai/surogate-agent/commit/9b945e7c5eee4869930a2727135ae3dfa465bc51))
+
 ## [1.1.0](https://github.com/invergent-ai/surogate-agent/compare/v1.0.0...v1.1.0) (2026-02-26)
 
 
