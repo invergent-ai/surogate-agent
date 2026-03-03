@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.3.0](https://github.com/invergent-ai/surogate-agent/compare/v1.2.1...v1.3.0) (2026-03-03)
+
+
+### Features
+
+* Clear conversation context per skill dev session button ([0defc13](https://github.com/invergent-ai/surogate-agent/commit/0defc131cdb4357643a490f516c172813c806f95))
+* clear session chat history for user role ([61c2240](https://github.com/invergent-ai/surogate-agent/commit/61c22406e9a9aa583a45b7f9eb1362777e5ae1bd))
+* message history navigation per user session and dev skill session ([d9dc2f7](https://github.com/invergent-ai/surogate-agent/commit/d9dc2f75227b948790f58ea96e03570c6d946233))
+
+
+### Bug Fixes
+
+* Guard angular routes per role ([2bc1bc1](https://github.com/invergent-ai/surogate-agent/commit/2bc1bc15f77892030cf186c3ecdbfec5aea20c27))
+* removed technical error messages ([447e23c](https://github.com/invergent-ai/surogate-agent/commit/447e23ce541dc170c46cc2e78ada1ab185dc20b8))
+
 ## [1.2.1](https://github.com/invergent-ai/surogate-agent/compare/v1.2.0...v1.2.1) (2026-03-03)
 
 
