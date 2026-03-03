@@ -171,6 +171,18 @@
 
           <!-- Files pane (takes remaining space, scrollable) -->
           <div class="flex-1 min-h-0 overflow-y-auto scrollbar-thin p-4 flex flex-col gap-6 bg-gray-50 dark:bg-zinc-900">
+
+            <!-- Chat history -->
+            <div class="flex items-center justify-between flex-none">
+              <h3 class="text-xs font-semibold text-gray-500 dark:text-zinc-400 uppercase tracking-wider">Chat history</h3>
+              <button
+                (click)="clearChatHistory()"
+                [disabled]="clearingHistory()"
+                class="text-xs text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors disabled:opacity-40"
+                title="Clear the stored conversation history for this session — the next message will start completely fresh. Workspace files are not affected."
+              >{{ clearingHistory() ? 'Clearing…' : 'Clear History' }}</button>
+            </div>
+
             <app-file-list
               title="Input files"
               [files]="inputFiles()"

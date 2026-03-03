@@ -76,12 +76,13 @@ export class UserComponent implements OnInit, AfterViewInit {
   readonly MOBILE_SNAPS  = MOBILE_SNAPS;
   readonly LEFT_DEFAULT  = '18rem';
 
-  sessions    = signal<SessionMeta[]>([]);
-  sessionId   = signal<string>('');
-  sessionName = computed(() => this.sessions().find(s => s.sessionId === this.sessionId())?.name ?? '');
-  inputFiles  = signal<FileInfo[]>([]);
-  outputFiles = signal<FileInfo[]>([]);
-  settingsOpen = signal(false);
+  sessions       = signal<SessionMeta[]>([]);
+  sessionId      = signal<string>('');
+  sessionName    = computed(() => this.sessions().find(s => s.sessionId === this.sessionId())?.name ?? '');
+  inputFiles     = signal<FileInfo[]>([]);
+  outputFiles    = signal<FileInfo[]>([]);
+  settingsOpen   = signal(false);
+  clearingHistory = signal(false);
 
   /** Height (px) of the sessions pane; adjusted by the drag separator. */
   sessionsPanelHeightPx = signal<number>(180);
@@ -204,6 +205,25 @@ export class UserComponent implements OnInit, AfterViewInit {
         ? (this.bp.isMobile() ? '50vw' : this.LEFT_DEFAULT)
         : '0px'
     );
+  }
+
+  async clearChatHistory() {
+    const sid = this.sessionId();
+    if (!sid) return;
+    const name = this.sessionName() || sid;
+    const ok = await this.confirmSvc.confirm(
+      `Clear the conversation history for "${name}"?\n\nThe LLM context will reset — the next message starts completely fresh. Workspace files are not affected.`,
+      { title: 'Clear chat history', actionLabel: 'Clear' },
+    );
+    if (!ok) return;
+    this.clearingHistory.set(true);
+    this.sessionsService.clearHistory(sid).subscribe({
+      next: () => {
+        this.clearingHistory.set(false);
+        if (this.chatComp) this.chatComp.clearMessages();
+      },
+      error: () => this.clearingHistory.set(false),
+    });
   }
 
   /** Called when the chat component finishes a streaming turn. */
