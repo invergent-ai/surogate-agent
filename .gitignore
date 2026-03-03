@@ -23,3 +23,5 @@ htmlcov/
 /workspace/
 /surogate.db-shm
 /surogate.db-wal
+/src/frontend/surogate.db-shm
+/src/frontend/surogate.db-wal

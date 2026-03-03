@@ -11,6 +11,8 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session as DBSession
 
+from sqlalchemy import text
+
 from surogate_agent.api.deps import ServerSettings, settings_dep
 from surogate_agent.api.models import (
     ChatHistoryResponse,
@@ -21,7 +23,7 @@ from surogate_agent.api.models import (
     SessionMetaUpdate,
     SessionResponse,
 )
-from surogate_agent.auth.database import get_db
+from surogate_agent.auth.database import engine, get_db
 from surogate_agent.auth.jwt import get_current_user
 from surogate_agent.auth.models import ChatHistory, SessionMetadata, User
 from surogate_agent.core.logging import get_logger
@@ -209,6 +211,51 @@ def save_session_history(
         db.add(record)
     db.commit()
     return {"saved": session_id}
+
+
+@router.delete("/{session_id}/history")
+def clear_session_history(
+    session_id: str,
+    db: DBSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Clear stored chat history for a session.
+
+    Deletes both the rendered-message row in ``chat_history`` (used by the
+    frontend to restore the display) and the raw LangGraph checkpoint entries
+    (``checkpoints``, ``checkpoint_writes``, ``checkpoint_blobs``) keyed by
+    the same ``thread_id``.  The next message sent with this session ID will
+    therefore start with a completely blank context.
+
+    Designed for developer skill sessions whose ``session_id`` / ``thread_id``
+    is ``dev:<skill-name>``.
+    """
+    # 1. Remove the rendered ChatHistory row (may not exist — that's fine).
+    hist = (
+        db.query(ChatHistory)
+        .filter_by(session_id=session_id, user_id=current_user.username)
+        .first()
+    )
+    if hist:
+        db.delete(hist)
+        db.commit()
+
+    # 2. Remove LangGraph checkpoint rows for this thread_id.
+    #    The tables are created by langgraph-checkpoint-sqlite and may not
+    #    exist on first run — silently skip if they don't.
+    try:
+        with engine.connect() as conn:
+            for table in ("checkpoints", "checkpoint_writes", "checkpoint_blobs"):
+                conn.execute(
+                    text(f"DELETE FROM {table} WHERE thread_id = :tid"),  # noqa: S608
+                    {"tid": session_id},
+                )
+            conn.commit()
+        log.info("cleared chat history: session=%s user=%s", session_id, current_user.username)
+    except Exception as exc:
+        log.debug("clear_session_history: could not clear LangGraph tables: %s", exc)
+
+    return {"cleared": session_id}
 
 
 # ---------------------------------------------------------------------------

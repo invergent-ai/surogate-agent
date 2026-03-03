@@ -5,6 +5,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ConfirmDialogService } from '../../../../core/services/confirm-dialog.service';
 import { SkillsService } from '../../../../core/services/skills.service';
+import { SessionsService } from '../../../../core/services/sessions.service';
 import {
   FileInfo, SkillListItem, SkillResponse, ValidationResult
 } from '../../../../core/models/skill.models';
@@ -19,11 +20,12 @@ import { FileViewerComponent } from '../../../../shared/components/file-viewer/f
   templateUrl: './skills-browser.component.html',
 })
 export class SkillsBrowserComponent implements OnInit {
-  @Output() skillSelected = new EventEmitter<string>();
-  @Output() skillDeleted  = new EventEmitter<string>();
-  @Output() fileOpened    = new EventEmitter<void>();
-  @Output() detailClosed  = new EventEmitter<void>();
-  @Output() skillsLoaded  = new EventEmitter<string[]>();
+  @Output() skillSelected  = new EventEmitter<string>();
+  @Output() skillDeleted   = new EventEmitter<string>();
+  @Output() fileOpened     = new EventEmitter<void>();
+  @Output() detailClosed   = new EventEmitter<void>();
+  @Output() skillsLoaded   = new EventEmitter<string[]>();
+  @Output() historyCleared = new EventEmitter<void>();
 
   skills = signal<SkillListItem[]>([]);
   filter = signal('');
@@ -33,6 +35,7 @@ export class SkillsBrowserComponent implements OnInit {
   validating = signal(false);
   loading = signal(false);
   saving = signal(false);
+  clearingHistory = signal(false);
 
   /** Height (px) of the skill-detail pane; adjusted by dragging the separator. */
   detailHeightPx = signal<number>(280);
@@ -46,7 +49,8 @@ export class SkillsBrowserComponent implements OnInit {
     );
   };
 
-  private confirmSvc = inject(ConfirmDialogService);
+  private confirmSvc   = inject(ConfirmDialogService);
+  private sessionsSvc  = inject(SessionsService);
 
   constructor(private skillsService: SkillsService) {}
 
@@ -119,6 +123,22 @@ export class SkillsBrowserComponent implements OnInit {
       if (this.selectedSkill()?.name === name) this.selectedSkill.set(null);
       this.loadSkills();
       this.skillDeleted.emit(name);
+    });
+  }
+
+  async clearHistory(name: string) {
+    const ok = await this.confirmSvc.confirm(
+      `Clear the stored conversation history for "${name}"?\n\nThe LLM context for this skill will reset — the next message starts completely fresh. Workspace files are not affected.`,
+      { title: 'Clear chat history', actionLabel: 'Clear' },
+    );
+    if (!ok) return;
+    this.clearingHistory.set(true);
+    this.sessionsSvc.clearHistory(`dev:${name}`).subscribe({
+      next: () => {
+        this.clearingHistory.set(false);
+        this.historyCleared.emit();
+      },
+      error: () => this.clearingHistory.set(false),
     });
   }
 

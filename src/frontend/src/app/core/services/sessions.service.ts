@@ -108,4 +108,9 @@ export class SessionsService {
       catchError(() => of(null)),
     );
   }
+
+  /** Delete stored chat history (rendered messages + LangGraph checkpoints) for a session. */
+  clearHistory(sessionId: string): Observable<{ cleared: string }> {
+    return this.http.delete<{ cleared: string }>(this.url(`/${sessionId}/history`));
+  }
 }

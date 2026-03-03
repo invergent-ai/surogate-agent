@@ -66,9 +66,16 @@
           <app-validation-badge [result]="validation()" [loading]="validating()" />
           <button
             (click)="validate()"
-            class="text-xs text-amber-600 dark:text-amber-400 hover:text-amber-800 dark:hover:text-amber-300 transition-colors"
+            class="text-xs text-amber-600 dark:text-amber-400 hover:text-amber-800 dark:hover:text-amber-300 transition-colors disabled:opacity-40"
             [disabled]="validating()"
+            title="Check this skill's SKILL.md for frontmatter errors and missing required fields"
           >Validate</button>
+          <button
+            (click)="clearHistory(sk.name)"
+            class="text-xs text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors disabled:opacity-40"
+            [disabled]="clearingHistory()"
+            title="Clear the stored LangGraph context for this skill — the next message will start with a fresh conversation. Workspace files are not affected."
+          >Clear History</button>
           <button
             (click)="deleteSkill(sk.name)"
             class="text-xs text-red-400 dark:text-red-500 hover:text-red-600 dark:hover:text-red-400 transition-colors"

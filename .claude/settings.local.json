@@ -36,7 +36,9 @@
       "WebFetch(domain:www.npmjs.com)",
       "WebFetch(domain:github.com)",
       "Bash(npm install:*)",
-      "WebFetch(domain:openrouter.ai)"
+      "WebFetch(domain:openrouter.ai)",
+      "WebFetch(domain:docs.langchain.com)",
+      "WebFetch(domain:reference.langchain.com)"
     ]
   }
 }
