@@ -1,11 +1,12 @@
 import {
   Component, Input, Output, EventEmitter, signal, computed,
-  ViewChild, ElementRef, OnDestroy, effect, inject
+  ViewChild, ElementRef, OnDestroy, OnChanges, SimpleChanges, effect, inject
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Subscription } from 'rxjs';
 import { ChatService } from '../../../core/services/chat.service';
+import { SessionsService } from '../../../core/services/sessions.service';
 import { SettingsService } from '../../../core/services/settings.service';
 import { ToastService } from '../../../core/services/toast.service';
 import {
@@ -27,13 +28,14 @@ const SKILL_PATH_RE = /skills\/([^/]+)\/SKILL\.md/;
   imports: [CommonModule, FormsModule, MessageBubbleComponent, ThinkingBlockComponent, ToolCallBlockComponent],
   templateUrl: './chat.component.html',
 })
-export class ChatComponent implements OnDestroy {
+export class ChatComponent implements OnChanges, OnDestroy {
   @ViewChild('messageList')  private messageListRef!:  ElementRef<HTMLElement>;
   @ViewChild('thinkingList') private thinkingListRef?: ElementRef<HTMLElement>;
 
   @Input() role: 'developer' | 'user' = 'user';
   @Input() skill = '';
   @Input() sessionId = '';
+  @Input() historyKey = '';
   @Input() compact = false;
   @Input() placeholder = 'Type a message…';
 
@@ -65,9 +67,10 @@ export class ChatComponent implements OnDestroy {
     return result;
   });
 
-  private chatService = inject(ChatService);
-  private settings    = inject(SettingsService);
-  private toast       = inject(ToastService);
+  private chatService  = inject(ChatService);
+  private sessionsSvc  = inject(SessionsService);
+  private settings     = inject(SettingsService);
+  private toast        = inject(ToastService);
 
   /** Height of the thinking panel in pixels — user-resizable. */
   thinkingPanelHeight = signal(180);
@@ -112,6 +115,22 @@ export class ChatComponent implements OnDestroy {
     });
   }
 
+  ngOnChanges(changes: SimpleChanges) {
+    if (changes['historyKey']) {
+      const key = changes['historyKey'].currentValue as string;
+      this.inputText.set('');
+      this._historyIndex = -1;
+      this._draftText = '';
+      if (key) {
+        this.sessionsSvc.getInputHistory(key).subscribe(entries => {
+          this._sentHistory = entries;
+        });
+      } else {
+        this._sentHistory = [];
+      }
+    }
+  }
+
   isThinkingBlock(block: ThinkingBlock | ToolBlock): block is ThinkingBlock {
     return block.type === 'thinking';
   }
@@ -137,6 +156,10 @@ export class ChatComponent implements OnDestroy {
     }
     this._historyIndex = -1;
     this._draftText    = '';
+
+    if (this.historyKey) {
+      this.sessionsSvc.saveInputHistory(this.historyKey, this._sentHistory).subscribe();
+    }
 
     // Guard: settings must be configured before chatting
     if (!this.settings.isConfigured()) {

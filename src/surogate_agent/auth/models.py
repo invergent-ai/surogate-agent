@@ -72,3 +72,20 @@ class ChatHistory(Base):
 
     def __repr__(self) -> str:
         return f"<ChatHistory session_id={self.session_id!r} user={self.user_id!r}>"
+
+
+class InputHistory(Base):
+    """Stores the prompt input history (up/down arrow navigation) for a session."""
+
+    __tablename__ = "input_history"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    session_id: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
+    user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    entries_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=datetime.utcnow
+    )
+
+    def __repr__(self) -> str:
+        return f"<InputHistory session_id={self.session_id!r} user={self.user_id!r}>"

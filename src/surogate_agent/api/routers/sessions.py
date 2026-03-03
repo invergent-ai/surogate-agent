@@ -18,6 +18,8 @@ from surogate_agent.api.models import (
     ChatHistoryResponse,
     ChatHistorySaveRequest,
     FileInfo,
+    InputHistoryResponse,
+    InputHistorySaveRequest,
     SessionMetaCreate,
     SessionMetaResponse,
     SessionMetaUpdate,
@@ -25,7 +27,7 @@ from surogate_agent.api.models import (
 )
 from surogate_agent.auth.database import engine, get_db
 from surogate_agent.auth.jwt import get_current_user
-from surogate_agent.auth.models import ChatHistory, SessionMetadata, User
+from surogate_agent.auth.models import ChatHistory, InputHistory, SessionMetadata, User
 from surogate_agent.core.logging import get_logger
 from surogate_agent.core.session import SessionManager
 
@@ -256,6 +258,59 @@ def clear_session_history(
         log.debug("clear_session_history: could not clear LangGraph tables: %s", exc)
 
     return {"cleared": session_id}
+
+
+# ---------------------------------------------------------------------------
+# Input history (prompt up/down navigation)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/{session_id}/input-history", response_model=InputHistoryResponse)
+def get_input_history(
+    session_id: str,
+    db: DBSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return stored prompt-input history entries for a session."""
+    record = (
+        db.query(InputHistory)
+        .filter_by(session_id=session_id, user_id=current_user.username)
+        .first()
+    )
+    if not record:
+        return InputHistoryResponse(session_id=session_id, entries=[])
+    return InputHistoryResponse(
+        session_id=session_id,
+        entries=json.loads(record.entries_json),
+    )
+
+
+@router.put("/{session_id}/input-history")
+def save_input_history(
+    session_id: str,
+    body: InputHistorySaveRequest,
+    db: DBSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Save (upsert) prompt-input history entries for a session."""
+    entries_json = json.dumps(body.entries)
+    record = (
+        db.query(InputHistory)
+        .filter_by(session_id=session_id, user_id=current_user.username)
+        .first()
+    )
+    if record:
+        record.entries_json = entries_json
+        record.updated_at = datetime.utcnow()
+    else:
+        record = InputHistory(
+            session_id=session_id,
+            user_id=current_user.username,
+            entries_json=entries_json,
+        )
+        db.add(record)
+    db.commit()
+    return {"saved": session_id}
 
 
 # ---------------------------------------------------------------------------

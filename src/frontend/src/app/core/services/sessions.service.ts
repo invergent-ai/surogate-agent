@@ -113,4 +113,21 @@ export class SessionsService {
   clearHistory(sessionId: string): Observable<{ cleared: string }> {
     return this.http.delete<{ cleared: string }>(this.url(`/${sessionId}/history`));
   }
+
+  // ── Input history (prompt up/down navigation) ────────────────────────────
+
+  /** Load previously saved prompt-input history entries for a session. */
+  getInputHistory(sessionId: string): Observable<string[]> {
+    return this.http.get<{ session_id: string; entries: string[] }>(this.url(`/${sessionId}/input-history`)).pipe(
+      map(r => r.entries),
+      catchError(() => of([])),
+    );
+  }
+
+  /** Save prompt-input history entries for a session (fire-and-forget). */
+  saveInputHistory(sessionId: string, entries: string[]): Observable<unknown> {
+    return this.http.put(this.url(`/${sessionId}/input-history`), { entries }).pipe(
+      catchError(() => of(null)),
+    );
+  }
 }

@@ -114,3 +114,12 @@ class ChatHistorySaveRequest(BaseModel):
 class ChatHistoryResponse(BaseModel):
     session_id: str
     messages: list[Any]
+
+
+class InputHistorySaveRequest(BaseModel):
+    entries: list[str]
+
+
+class InputHistoryResponse(BaseModel):
+    session_id: str
+    entries: list[str]
