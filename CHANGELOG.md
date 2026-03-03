@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.1](https://github.com/invergent-ai/surogate-agent/compare/v1.2.0...v1.2.1) (2026-03-03)
+
+
+### Bug Fixes
+
+* Relative paths to data folders ([558ac44](https://github.com/invergent-ai/surogate-agent/commit/558ac44fe43952cdcb384f4d0f3338f5af811bb3))
+
 ## [1.2.0](https://github.com/invergent-ai/surogate-agent/compare/v1.1.0...v1.2.0) (2026-03-02)
 
 
