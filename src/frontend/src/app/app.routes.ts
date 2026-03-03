@@ -19,11 +19,13 @@ export const routes: Routes = [
     path: 'developer',
     loadComponent: () => import('./pages/developer/developer.component').then(m => m.DeveloperComponent),
     canActivate: [authGuard],
+    data: { role: 'developer' },
   },
   {
     path: 'user',
     loadComponent: () => import('./pages/user/user.component').then(m => m.UserComponent),
     canActivate: [authGuard],
+    data: { role: 'user' },
   },
   { path: '**', redirectTo: 'login' },
 ];
