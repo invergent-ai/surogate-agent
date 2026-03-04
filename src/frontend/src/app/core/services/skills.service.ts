@@ -68,4 +68,17 @@ export class SkillsService {
   deleteFile(skillName: string, fileName: string): Observable<{ deleted: string }> {
     return this.http.delete<{ deleted: string }>(this.url(`/${skillName}/files/${fileName}`));
   }
+
+  exportSkill(name: string): Observable<Blob> {
+    return this.http.get(this.url(`/${name}/export`), { responseType: 'blob' });
+  }
+
+  importSkills(file: File, force = false): Observable<{ imported: string[]; skipped: string[] }> {
+    const form = new FormData();
+    form.append('upload', file);
+    return this.http.post<{ imported: string[]; skipped: string[] }>(
+      this.url('/import') + (force ? '?force=true' : ''),
+      form
+    );
+  }
 }

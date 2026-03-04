@@ -123,3 +123,13 @@ class InputHistorySaveRequest(BaseModel):
 class InputHistoryResponse(BaseModel):
     session_id: str
     entries: list[str]
+
+
+# ---------------------------------------------------------------------------
+# Skill import/export models
+# ---------------------------------------------------------------------------
+
+
+class SkillImportResponse(BaseModel):
+    imported: list[str]
+    skipped: list[str]

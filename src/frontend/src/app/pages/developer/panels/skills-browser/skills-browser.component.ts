@@ -1,11 +1,12 @@
 import {
-  Component, Output, EventEmitter, signal, OnInit, inject
+  Component, Output, EventEmitter, signal, OnInit, inject, ViewChild, ElementRef
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ConfirmDialogService } from '../../../../core/services/confirm-dialog.service';
 import { SkillsService } from '../../../../core/services/skills.service';
 import { SessionsService } from '../../../../core/services/sessions.service';
+import { ToastService } from '../../../../core/services/toast.service';
 import {
   FileInfo, SkillListItem, SkillResponse, ValidationResult
 } from '../../../../core/models/skill.models';
@@ -36,6 +37,10 @@ export class SkillsBrowserComponent implements OnInit {
   loading = signal(false);
   saving = signal(false);
   clearingHistory = signal(false);
+  exporting = signal(false);
+  importing = signal(false);
+
+  @ViewChild('importInput') importInputRef!: ElementRef<HTMLInputElement>;
 
   /** Height (px) of the skill-detail pane; adjusted by dragging the separator. */
   detailHeightPx = signal<number>(280);
@@ -51,6 +56,7 @@ export class SkillsBrowserComponent implements OnInit {
 
   private confirmSvc   = inject(ConfirmDialogService);
   private sessionsSvc  = inject(SessionsService);
+  private toast        = inject(ToastService);
 
   constructor(private skillsService: SkillsService) {}
 
@@ -139,6 +145,46 @@ export class SkillsBrowserComponent implements OnInit {
         this.historyCleared.emit();
       },
       error: () => this.clearingHistory.set(false),
+    });
+  }
+
+  exportSkill(name: string) {
+    this.exporting.set(true);
+    this.skillsService.exportSkill(name).subscribe({
+      next: (blob) => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = `${name}.zip`; a.click();
+        URL.revokeObjectURL(url);
+        this.exporting.set(false);
+      },
+      error: () => this.exporting.set(false),
+    });
+  }
+
+  triggerImport() {
+    this.importInputRef.nativeElement.click();
+  }
+
+  onImportFileSelected(event: Event) {
+    const file = (event.target as HTMLInputElement).files?.[0];
+    if (!file) return;
+    this.importing.set(true);
+    this.skillsService.importSkills(file).subscribe({
+      next: (res) => {
+        this.importing.set(false);
+        (event.target as HTMLInputElement).value = '';
+        const msg = res.imported.length
+          ? `Imported: ${res.imported.join(', ')}` + (res.skipped.length ? ` — skipped (already exist): ${res.skipped.join(', ')}` : '')
+          : `All skills already exist — use force to overwrite`;
+        this.toast.success(msg);
+        this.loadSkills();
+      },
+      error: (err) => {
+        this.importing.set(false);
+        (event.target as HTMLInputElement).value = '';
+        this.toast.error(err?.error?.detail ?? 'Import failed');
+      },
     });
   }
 

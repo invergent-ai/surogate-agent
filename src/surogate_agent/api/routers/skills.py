@@ -4,17 +4,20 @@ Skills CRUD router — /skills
 
 from __future__ import annotations
 
+import io
 import shutil
+import zipfile
 from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 
 from surogate_agent.api.deps import ServerSettings, settings_dep
 from surogate_agent.api.models import (
     FileInfo,
     SkillCreateRequest,
+    SkillImportResponse,
     SkillListItem,
     SkillResponse,
     ValidationResult,
@@ -98,6 +101,53 @@ def list_skills(
 
 
 # ---------------------------------------------------------------------------
+# Import  (must be declared before /{name} to avoid route shadowing)
+# ---------------------------------------------------------------------------
+
+
+@router.post("/import", response_model=SkillImportResponse, status_code=201)
+async def import_skills(
+    upload: UploadFile = File(...),
+    force: bool = Query(False),
+    settings: ServerSettings = Depends(settings_dep),
+):
+    data = await upload.read()
+    buf = io.BytesIO(data)
+    if not zipfile.is_zipfile(buf):
+        raise HTTPException(status_code=400, detail="Uploaded file is not a valid zip archive")
+    buf.seek(0)
+    imported: list[str] = []
+    skipped: list[str] = []
+    with zipfile.ZipFile(buf) as zf:
+        skill_dirs = {
+            parts[0]
+            for name in zf.namelist()
+            if (parts := Path(name).parts) and len(parts) >= 2 and parts[1] == "SKILL.md"
+        }
+        if not skill_dirs:
+            raise HTTPException(
+                status_code=400,
+                detail="No valid skill directories found in zip (each must contain SKILL.md)",
+            )
+        for skill_name in sorted(skill_dirs):
+            dest = settings.skills_dir / skill_name
+            if dest.exists() and not force:
+                skipped.append(skill_name)
+                continue
+            dest.mkdir(parents=True, exist_ok=True)
+            for member in zf.infolist():
+                parts = Path(member.filename).parts
+                if parts and parts[0] == skill_name and len(parts) >= 2:
+                    target = dest / Path(*parts[1:])
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_bytes(zf.read(member))
+            imported.append(skill_name)
+    settings.skills_dir.mkdir(parents=True, exist_ok=True)
+    log.info("import_skills: imported=%s skipped=%s", imported, skipped)
+    return SkillImportResponse(imported=imported, skipped=skipped)
+
+
+# ---------------------------------------------------------------------------
 # Get
 # ---------------------------------------------------------------------------
 
@@ -119,6 +169,30 @@ def get_skill(name: str, settings: ServerSettings = Depends(settings_dep)):
         path=str(info.path),
         skill_md_content=_skill_md_content(info.path),
         helper_files=_helper_files(info.path),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Export
+# ---------------------------------------------------------------------------
+
+
+@router.get("/{name}/export")
+def export_skill(name: str, settings: ServerSettings = Depends(settings_dep)):
+    skill_dir = settings.skills_dir / name
+    if not skill_dir.is_dir() or not (skill_dir / _SKILL_FILENAME).exists():
+        raise HTTPException(status_code=404, detail=f"Skill '{name}' not found")
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for f in sorted(skill_dir.iterdir()):
+            if f.is_file():
+                zf.write(f, arcname=f"{name}/{f.name}")
+    buf.seek(0)
+    log.info("export_skill: '%s'", name)
+    return StreamingResponse(
+        buf,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{name}.zip"'},
     )
 
 
