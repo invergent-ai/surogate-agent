@@ -16,7 +16,7 @@ from surogate_agent.api.models import ChatRequest
 from surogate_agent.auth.jwt import get_current_user
 from surogate_agent.auth.models import User
 from surogate_agent.core.agent import create_agent
-from surogate_agent.core.config import AgentConfig
+from surogate_agent.core.config import AgentConfig, _DEFAULT_SKILLS_DIR
 from surogate_agent.core.logging import get_logger
 from surogate_agent.core.roles import Role
 from surogate_agent.core.session import SessionManager
@@ -208,6 +208,26 @@ async def _stream_chat(
             checkpointer=checkpointer,
             active_skill=dev_skill,
         )
+
+        # For user-role chats, announce which skills are loaded so the frontend
+        # can display a real-time "Skill activity" panel with names and descriptions.
+        if role == Role.USER:
+            from surogate_agent.skills.registry import SkillRegistry
+            _skill_registry = SkillRegistry()
+            if _DEFAULT_SKILLS_DIR.exists():
+                _skill_registry.scan(_DEFAULT_SKILLS_DIR)
+            if config.user_skills_dir.exists():
+                _skill_registry.scan(config.user_skills_dir)
+            _user_paths = _skill_registry.paths_for_role(Role.USER)
+            _active_skills = [
+                s for s in _skill_registry.all_skills()
+                if s.path in _user_paths
+            ]
+            if req.skill.strip():
+                _active_skills = [s for s in _active_skills if s.name == req.skill.strip()]
+            for _si in _active_skills:
+                log.debug("SSE skill_use: %s", _si.name)
+                yield _sse_event("skill_use", {"name": _si.name, "description": _si.description})
 
         invoke_config = {"configurable": {"thread_id": thread_id}}
         invoke_input = {"messages": [{"role": "user", "content": req.message}]}

@@ -38,6 +38,7 @@ export interface SseToolResultData { name: string; result: string; }
 export interface SseTextData { text: string; }
 export interface SseDoneData { session_id: string; files: string[]; }
 export interface SseErrorData { detail: string; }
+export interface SseSkillUseData { name: string; description: string; }
 
 export type SseEvent =
   | { event: 'thinking';    data: SseThinkingData }
@@ -45,7 +46,8 @@ export type SseEvent =
   | { event: 'tool_result'; data: SseToolResultData }
   | { event: 'text';        data: SseTextData }
   | { event: 'done';        data: SseDoneData }
-  | { event: 'error';       data: SseErrorData };
+  | { event: 'error';       data: SseErrorData }
+  | { event: 'skill_use';   data: SseSkillUseData };
 
 export interface ChatRequest {
   message: string;

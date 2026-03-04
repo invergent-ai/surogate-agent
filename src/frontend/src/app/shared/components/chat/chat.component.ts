@@ -8,9 +8,10 @@ import { Subscription } from 'rxjs';
 import { ChatService } from '../../../core/services/chat.service';
 import { SessionsService } from '../../../core/services/sessions.service';
 import { SettingsService } from '../../../core/services/settings.service';
+import { SkillsService } from '../../../core/services/skills.service';
 import { ToastService } from '../../../core/services/toast.service';
 import {
-  ChatMessage, MessageBlock, SseEvent, ToolBlock, ThinkingBlock
+  ChatMessage, MessageBlock, SseEvent, ToolBlock, ThinkingBlock, SseSkillUseData
 } from '../../../core/models/chat.models';
 import { MessageBubbleComponent } from '../message-bubble/message-bubble.component';
 import { ThinkingBlockComponent } from '../thinking-block/thinking-block.component';
@@ -38,6 +39,7 @@ export class ChatComponent implements OnChanges, OnDestroy {
   @Input() historyKey = '';
   @Input() compact = false;
   @Input() placeholder = 'Type a message…';
+  @Input() showSkillActivity = false;
 
   @Output() sessionCreated    = new EventEmitter<string>();
   @Output() skillDetected     = new EventEmitter<string>();
@@ -67,9 +69,26 @@ export class ChatComponent implements OnChanges, OnDestroy {
     return result;
   });
 
+  /** Skills announced by the backend for the current turn; drives the skill activity panel. */
+  skillActivities = signal<{ name: string; description: string; finished: boolean; startTime: number; endTime?: number }[]>([]);
+
+  // Panel visibility: eye icon toggles show/hide; slashed eye = hidden
+  agentPanelHidden  = signal(false);
+  skillPanelHidden  = signal(false);
+
+  /** Name of the currently expanded skill item, or null if none. Exclusive — only one open at a time. */
+  expandedSkill = signal<string | null>(null);
+
+  /** True when at least one panel has visible content — drives the outer panel height. */
+  readonly activityContentVisible = computed(() =>
+    (this.thinkingBlocks().length > 0 && !this.agentPanelHidden()) ||
+    (this.skillActivities().length > 0 && !this.skillPanelHidden())
+  );
+
   private chatService  = inject(ChatService);
   private sessionsSvc  = inject(SessionsService);
   private settings     = inject(SettingsService);
+  private skillsSvc    = inject(SkillsService);
   private toast        = inject(ToastService);
 
   /** Height of the thinking panel in pixels — user-resizable. */
@@ -172,6 +191,8 @@ export class ChatComponent implements OnChanges, OnDestroy {
     }
 
     this.inputText.set('');
+    this.skillActivities.set([]);
+    this.expandedSkill.set(null);
     this.messages.update(msgs => [
       ...msgs,
       { id: nextId(), role: 'user', blocks: [{ type: 'text', text }], timestamp: new Date(), finalized: true },
@@ -196,6 +217,7 @@ export class ChatComponent implements OnChanges, OnDestroy {
       next: (ev: SseEvent) => this.handleEvent(ev, assistantId),
       error: (err) => {
         this.finalizeAssistant(assistantId, [{ type: 'error', text: String(err?.message ?? err) }]);
+        this.skillActivities.update(list => list.map(s => ({ ...s, finished: true, endTime: s.endTime ?? Date.now() })));
         this.streaming.set(false);
       },
       complete: () => {
@@ -213,6 +235,7 @@ export class ChatComponent implements OnChanges, OnDestroy {
       this.finalizeAssistant(this._currentAssistantId, []);
       this._currentAssistantId = '';
     }
+    this.skillActivities.update(list => list.map(s => ({ ...s, finished: true, endTime: s.endTime ?? Date.now() })));
     this.streaming.set(false);
     this._emitSnapshot();
   }
@@ -226,6 +249,38 @@ export class ChatComponent implements OnChanges, OnDestroy {
   }
 
   private handleEvent(ev: SseEvent, assistantId: string) {
+    // skill_use is pure metadata — populate the skill activity panel, no message block
+    if (ev.event === 'skill_use') {
+      const d = ev.data as SseSkillUseData;
+      this.skillActivities.update(list => [
+        ...list,
+        { name: d.name, description: d.description, finished: false, startTime: Date.now() },
+      ]);
+      return;
+    }
+
+    // Mark all skills finished when the turn completes or errors
+    if (ev.event === 'done' || ev.event === 'error') {
+      this.skillActivities.update(list => list.map(s => ({ ...s, finished: true, endTime: s.endTime ?? Date.now() })));
+    }
+
+    // Detect skill usage from any tool_call that touches a SKILL.md file.
+    // This complements the backend skill_use events and catches cases where the
+    // agent explicitly reads a skill file at runtime.
+    if (ev.event === 'tool_call' && this.showSkillActivity) {
+      const path = (ev.data.args?.['path'] ?? ev.data.args?.['file_path'] ?? '') as string;
+      const m = path.match(SKILL_PATH_RE);
+      const skillName = m
+        ? m[1]
+        : (/(?:^|[/\\])SKILL\.md$/i.test(path) && this.skill) ? this.skill : null;
+      if (skillName && !this.skillActivities().some(sa => sa.name === skillName)) {
+        this.skillActivities.update(list => [
+          ...list,
+          { name: skillName, description: '', finished: false, startTime: Date.now() },
+        ]);
+      }
+    }
+
     this.messages.update(msgs => {
       const idx = msgs.findIndex(m => m.id === assistantId);
       if (idx < 0) return msgs;
@@ -299,6 +354,8 @@ export class ChatComponent implements OnChanges, OnDestroy {
 
   clearMessages() {
     this.messages.set([]);
+    this.skillActivities.set([]);
+    this.expandedSkill.set(null);
     // Generate a fresh ID so the backend opens a new LangGraph thread rather
     // than resuming the old checkpoint — prevents stale context after a skill switch.
     const freshId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -307,6 +364,10 @@ export class ChatComponent implements OnChanges, OnDestroy {
 
   /** Restore a previously saved session: replay messages and set the session ID. */
   restoreSession(msgs: ChatMessage[], sessionId: string) {
+    // Always reset transient state so switching to a new/empty session starts clean.
+    this.skillActivities.set([]);
+    this.expandedSkill.set(null);
+
     // Advance msgCounter past any IDs already in the restored list so that
     // the first nextId() call after restore never collides with a restored
     // message ID.  Without this, handleEvent() finds the wrong (old) bubble
@@ -320,6 +381,40 @@ export class ChatComponent implements OnChanges, OnDestroy {
       timestamp: m.timestamp instanceof Date ? m.timestamp : new Date(m.timestamp as unknown as string),
     })));
     this.currentSessionId.set(sessionId);
+
+    // Re-populate skill activity panel from tool_call blocks in the restored messages.
+    // Skill_use SSE events aren't replayed on restore, so we derive skill names from
+    // any SKILL.md paths that appear in saved tool_call args.
+    if (this.showSkillActivity) {
+      const seen = new Set<string>();
+      const skills: { name: string; description: string; finished: boolean; startTime: number; endTime?: number }[] = [];
+      const now = Date.now();
+      for (const msg of msgs) {
+        for (const block of msg.blocks) {
+          if (block.type === 'tool_call') {
+            const path = ((block as ToolBlock).args?.['path'] ?? (block as ToolBlock).args?.['file_path'] ?? '') as string;
+            const m = path.match(SKILL_PATH_RE);
+            if (m && !seen.has(m[1])) {
+              seen.add(m[1]);
+              skills.push({ name: m[1], description: '', finished: true, startTime: now });
+            }
+          }
+        }
+      }
+      if (skills.length > 0) {
+        this.skillActivities.set(skills);
+        // Fetch descriptions from the skills API and patch them in
+        this.skillsSvc.list('user').subscribe({
+          next: (allSkills) => {
+            const descMap = new Map(allSkills.map(s => [s.name, s.description]));
+            this.skillActivities.update(list =>
+              list.map(s => ({ ...s, description: descMap.get(s.name) ?? s.description }))
+            );
+          },
+          error: () => { /* keep skills without descriptions on API failure */ },
+        });
+      }
+    }
   }
 
   onKeydown(e: KeyboardEvent) {
@@ -364,6 +459,39 @@ export class ChatComponent implements OnChanges, OnDestroy {
       const ta = document.activeElement as HTMLTextAreaElement | null;
       if (ta?.tagName === 'TEXTAREA') ta.setSelectionRange(ta.value.length, ta.value.length);
     }, 0);
+  }
+
+  toggleAgentPanel() { this.agentPanelHidden.update(v => !v); }
+  toggleSkillPanel() { this.skillPanelHidden.update(v => !v); }
+
+  /** CSS classes for the agent activity column — adjusts width based on both panels' visibility. */
+  getAgentColumnClass(): string {
+    const skillVisible = this.showSkillActivity && this.skillActivities().length > 0 && !this.skillPanelHidden();
+    if (this.agentPanelHidden()) {
+      return 'flex-none' + (skillVisible ? ' border-r border-gray-200 dark:border-zinc-700' : '');
+    }
+    if (skillVisible) return 'w-3/4 flex-none border-r border-gray-200 dark:border-zinc-700';
+    return 'flex-1';
+  }
+
+  /** CSS classes for the skill activity column — adjusts width based on both panels' visibility. */
+  getSkillColumnClass(): string {
+    const agentVisible = this.thinkingBlocks().length > 0 && !this.agentPanelHidden();
+    if (this.skillPanelHidden()) {
+      return agentVisible ? 'flex-none border-l border-gray-200 dark:border-zinc-700' : 'flex-none';
+    }
+    if (agentVisible) return 'w-1/4 flex-none';
+    return 'flex-1';
+  }
+
+  toggleSkillExpanded(name: string) {
+    this.expandedSkill.update(current => current === name ? null : name);
+  }
+
+  formatDuration(startTime: number, endTime?: number): string {
+    const ms = (endTime ?? Date.now()) - startTime;
+    if (ms < 1000) return `${ms}ms`;
+    return `${(ms / 1000).toFixed(1)}s`;
   }
 
   private scrollToBottom() {
