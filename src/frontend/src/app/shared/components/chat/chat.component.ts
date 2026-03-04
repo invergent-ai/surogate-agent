@@ -384,19 +384,18 @@ export class ChatComponent implements OnChanges, OnDestroy {
 
     // Re-populate skill activity panel from tool_call blocks in the restored messages.
     // Skill_use SSE events aren't replayed on restore, so we derive skill names from
-    // any SKILL.md paths that appear in saved tool_call args.
+    // any SKILL.md paths that appear in saved tool_call args. Duplicates are kept to
+    // preserve the full ordered execution sequence (same skill can run multiple times).
     if (this.showSkillActivity) {
-      const seen = new Set<string>();
       const skills: { name: string; description: string; finished: boolean; startTime: number; endTime?: number }[] = [];
-      const now = Date.now();
       for (const msg of msgs) {
+        const ts = (msg.timestamp instanceof Date ? msg.timestamp : new Date(msg.timestamp as unknown as string)).getTime();
         for (const block of msg.blocks) {
           if (block.type === 'tool_call') {
             const path = ((block as ToolBlock).args?.['path'] ?? (block as ToolBlock).args?.['file_path'] ?? '') as string;
             const m = path.match(SKILL_PATH_RE);
-            if (m && !seen.has(m[1])) {
-              seen.add(m[1]);
-              skills.push({ name: m[1], description: '', finished: true, startTime: now });
+            if (m) {
+              skills.push({ name: m[1], description: '', finished: true, startTime: ts, endTime: ts });
             }
           }
         }
