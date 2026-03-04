@@ -17,11 +17,13 @@ from surogate_agent.core.config import AgentConfig, _DEFAULT_SKILLS_DIR
 from surogate_agent.core.logging import get_logger
 from surogate_agent.core.roles import Role, RoleContext
 from surogate_agent.core.session import Session, SessionManager
-from opik.integrations.langchain import OpikTracer, track_langgraph
-
 log = get_logger(__name__)
 
-opik_tracer = OpikTracer(project_name="surogate-agent")
+try:
+    from opik.integrations.langchain import OpikTracer, track_langgraph as _track_langgraph
+    _OPIK_AVAILABLE = True
+except ImportError:
+    _OPIK_AVAILABLE = False
 
 # Lazy import so that users without deepagents installed still get import errors
 # at call time, not at module import time — friendlier for unit testing with mocks.
@@ -307,13 +309,13 @@ def create_agent(
 
     graph = create_deep_agent(**graph_kwargs)
     log.debug("deepagents graph created")
-    
-    opik_tracer = OpikTracer(
-        tags=["production"],
-        metadata={"version": "1.0"}
-    )
-    
-    graph = track_langgraph(graph, opik_tracer)
+
+    if _OPIK_AVAILABLE:
+        try:
+            opik_tracer = OpikTracer(tags=["production"], metadata={"version": "1.0"})
+            graph = _track_langgraph(graph, opik_tracer)
+        except Exception as exc:
+            log.warning("opik tracing setup failed, continuing without it: %s", exc)
 
     from surogate_agent.middleware.role_guard import RoleGuardAgent
     agent = RoleGuardAgent(graph=graph, role_context=role_ctx, config=config, session=session)
@@ -332,6 +334,53 @@ def _read_skill_md(skills_root: Path, skill_name: str) -> str:
         return path.read_text(encoding="utf-8")
     except OSError:
         return ""
+
+
+def _build_user_skill_catalog(config: AgentConfig) -> str:
+    """Return a system-prompt section that enforces skill lookup before every response.
+
+    Injected at the top of the USER mode system suffix so the agent always
+    follows a skill-first decision procedure rather than answering directly.
+    """
+    from surogate_agent.skills.loader import SkillLoader
+
+    skills_root = config.user_skills_dir.resolve()
+    user_skills = []
+    # Scan user_skills_dir and any extra configured dirs (excluding builtin).
+    for d in [config.user_skills_dir] + [
+        p for p in config.skills_dirs
+        if p.resolve() != _DEFAULT_SKILLS_DIR.resolve()
+    ]:
+        if d.is_dir():
+            for skill in SkillLoader(d).load():
+                if not skill.is_developer_only:
+                    user_skills.append(skill)
+
+    if not user_skills:
+        return ""
+
+    skill_lines = "\n".join(
+        f"  - **{s.name}**: {s.description}" for s in user_skills
+    )
+    skill_paths = "\n".join(
+        f"  - `{skills_root}/{s.name}/SKILL.md`" for s in user_skills
+    )
+
+    return (
+        f"## Skill-first protocol — MANDATORY\n\n"
+        f"You have the following skills available:\n\n"
+        f"{skill_lines}\n\n"
+        f"**Before responding to any user message, you MUST:**\n\n"
+        f"1. Check whether the user's request matches one of the skills above.\n"
+        f"2. If a skill matches — use `read_file` to read its SKILL.md "
+        f"and follow its instructions exactly for your response.\n"
+        f"   Skill files are located at:\n"
+        f"{skill_paths}\n"
+        f"3. If no skill matches — answer normally using your own knowledge.\n\n"
+        f"Never skip step 1. Even when the match seems obvious, always read the "
+        f"skill's SKILL.md before responding so you follow the exact instructions "
+        f"the developer defined.\n\n"
+    )
 
 
 def _build_system_suffix(
@@ -428,8 +477,17 @@ def _build_system_suffix(
         dev_workspace = config.dev_workspace_dir.resolve()
         builtin_dir = _DEFAULT_SKILLS_DIR.resolve()
         session_snapshot = _snapshot_session(user_workspace)
+
+        # Build an explicit skill catalog so the LLM knows which skills are
+        # available and that it must actively use them.  Without this, the
+        # agent sometimes ignores skill instructions because the file-access
+        # section (which comes later in the prompt) describes skill dirs as
+        # read-only files — confusing the LLM about whether to use them.
+        skill_catalog = _build_user_skill_catalog(config)
+
         parts.append(
             f"You are operating in USER mode.\n\n"
+            f"{skill_catalog}"
             f"## File access rules\n\n"
             f"### READ-WRITE paths — you may create, edit, and delete files here\n\n"
             f"1. **Your session workspace**  →  `{user_workspace}/`\n"
@@ -439,9 +497,9 @@ def _build_system_suffix(
             f"   If the user asks to process a file not listed below, tell them to\n"
             f"   upload it to the session workspace first.\n\n"
             f"### READ-ONLY paths — you may read but MUST NOT modify or delete\n\n"
-            f"2. **User skills**  →  `{skills_root}/<skill-name>/`\n"
-            f"   Skill definition files (SKILL.md, templates, scripts, etc.).\n"
-            f"   These belong to the developer — never write or delete them.\n\n"
+            f"2. **Skill files**  →  `{skills_root}/<skill-name>/`\n"
+            f"   The files that define your active skills (SKILL.md, templates, etc.).\n"
+            f"   You may read them to follow their instructions, but never modify or delete them.\n\n"
             f"3. **Built-in skills**  →  `{builtin_dir}/`\n"
             f"   Package-bundled skills — never write or delete these either.\n\n"
             f"### FORBIDDEN — never access anything outside the paths above\n\n"
