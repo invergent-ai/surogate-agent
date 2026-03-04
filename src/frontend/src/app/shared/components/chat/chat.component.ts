@@ -94,6 +94,9 @@ export class ChatComponent implements OnChanges, OnDestroy {
   /** Height of the thinking panel in pixels — user-resizable. */
   thinkingPanelHeight = signal(180);
 
+  /** Descriptions received from skill_use SSE events; used as a lookup when tool_call entries are added. */
+  private _skillDescriptions = new Map<string, string>();
+
   private sub?: Subscription;
   private _currentAssistantId = '';
   private _dragStartY    = 0;
@@ -191,7 +194,6 @@ export class ChatComponent implements OnChanges, OnDestroy {
     }
 
     this.inputText.set('');
-    this.skillActivities.set([]);
     this.expandedSkill.set(null);
     this.messages.update(msgs => [
       ...msgs,
@@ -249,13 +251,12 @@ export class ChatComponent implements OnChanges, OnDestroy {
   }
 
   private handleEvent(ev: SseEvent, assistantId: string) {
-    // skill_use is pure metadata — populate the skill activity panel, no message block
+    // skill_use announces which skills are loaded — store the description for
+    // later lookup but don't add to the activity list yet. Entries appear only
+    // when the agent actually reads a SKILL.md file (tool_call below).
     if (ev.event === 'skill_use') {
       const d = ev.data as SseSkillUseData;
-      this.skillActivities.update(list => [
-        ...list,
-        { name: d.name, description: d.description, finished: false, startTime: Date.now() },
-      ]);
+      this._skillDescriptions.set(d.name, d.description);
       return;
     }
 
@@ -264,19 +265,18 @@ export class ChatComponent implements OnChanges, OnDestroy {
       this.skillActivities.update(list => list.map(s => ({ ...s, finished: true, endTime: s.endTime ?? Date.now() })));
     }
 
-    // Detect skill usage from any tool_call that touches a SKILL.md file.
-    // This complements the backend skill_use events and catches cases where the
-    // agent explicitly reads a skill file at runtime.
+    // Each time the agent reads a SKILL.md file, add a new activity entry —
+    // duplicates are intentional (ordered execution history, not a unique set).
     if (ev.event === 'tool_call' && this.showSkillActivity) {
       const path = (ev.data.args?.['path'] ?? ev.data.args?.['file_path'] ?? '') as string;
       const m = path.match(SKILL_PATH_RE);
       const skillName = m
         ? m[1]
         : (/(?:^|[/\\])SKILL\.md$/i.test(path) && this.skill) ? this.skill : null;
-      if (skillName && !this.skillActivities().some(sa => sa.name === skillName)) {
+      if (skillName) {
         this.skillActivities.update(list => [
           ...list,
-          { name: skillName, description: '', finished: false, startTime: Date.now() },
+          { name: skillName, description: this._skillDescriptions.get(skillName) ?? '', finished: false, startTime: Date.now() },
         ]);
       }
     }
