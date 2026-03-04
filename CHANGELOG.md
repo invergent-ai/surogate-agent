@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.1](https://github.com/invergent-ai/surogate-agent/compare/v1.3.0...v1.3.1) (2026-03-04)
+
+
+### Bug Fixes
+
+* Natural skill selection for user agents ([608b106](https://github.com/invergent-ai/surogate-agent/commit/608b106d692747871c9975d145031e3f365ab1cf))
+
 ## [1.3.0](https://github.com/invergent-ai/surogate-agent/compare/v1.2.1...v1.3.0) (2026-03-03)
 
 
