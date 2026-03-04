@@ -17,8 +17,11 @@ from surogate_agent.core.config import AgentConfig, _DEFAULT_SKILLS_DIR
 from surogate_agent.core.logging import get_logger
 from surogate_agent.core.roles import Role, RoleContext
 from surogate_agent.core.session import Session, SessionManager
+from opik.integrations.langchain import OpikTracer, track_langgraph
 
 log = get_logger(__name__)
+
+opik_tracer = OpikTracer(project_name="surogate-agent")
 
 # Lazy import so that users without deepagents installed still get import errors
 # at call time, not at module import time — friendlier for unit testing with mocks.
@@ -304,6 +307,13 @@ def create_agent(
 
     graph = create_deep_agent(**graph_kwargs)
     log.debug("deepagents graph created")
+    
+    opik_tracer = OpikTracer(
+        tags=["production"],
+        metadata={"version": "1.0"}
+    )
+    
+    graph = track_langgraph(graph, opik_tracer)
 
     from surogate_agent.middleware.role_guard import RoleGuardAgent
     agent = RoleGuardAgent(graph=graph, role_context=role_ctx, config=config, session=session)
