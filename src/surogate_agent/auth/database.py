@@ -14,10 +14,28 @@ from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 
-DATABASE_URL: str = os.getenv(
-    "SUROGATE_DATABASE_URL",
-    "sqlite:///./surogate.db",  # override with SUROGATE_DATABASE_URL in production
-)
+def _default_database_url() -> str:
+    """Compute a CWD-independent default database URL.
+
+    Derives the path from ``SUROGATE_SESSIONS_DIR`` so the database lands
+    in the same parent directory as the data directories (sessions/, skills/,
+    workspace/).  Without this, SQLAlchemy creates ``./surogate.db`` relative
+    to the process CWD at import time, which produces duplicate DB files when
+    the server is launched from different directories.
+
+    In Docker the ``SUROGATE_DATABASE_URL`` env var is always set explicitly
+    to ``sqlite:////data/surogate.db``, so this function is only reached in
+    local development.
+    """
+    sessions_env = os.getenv("SUROGATE_SESSIONS_DIR", "")
+    if sessions_env:
+        data_dir = Path(sessions_env).resolve().parent
+    else:
+        data_dir = Path(".").resolve()
+    return f"sqlite:///{data_dir}/surogate.db"
+
+
+DATABASE_URL: str = os.getenv("SUROGATE_DATABASE_URL") or _default_database_url()
 
 # SQLite requires check_same_thread=False for multi-threaded FastAPI use.
 _connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
@@ -29,18 +47,6 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 class Base(DeclarativeBase):
     """Shared declarative base for all ORM models."""
-
-
-def get_sqlite_path() -> Path | None:
-    """Return the resolved filesystem path of the SQLite database, or None.
-
-    Used to point LangGraph's AsyncSqliteSaver at the same file as the main
-    application DB, eliminating separate ``.history.db`` files.
-    """
-    if DATABASE_URL.startswith("sqlite:///"):
-        raw = DATABASE_URL[len("sqlite:///"):]
-        return Path(raw).resolve()
-    return None
 
 
 def get_db() -> Generator[Session, None, None]:

@@ -11,8 +11,6 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session as DBSession
 
-from sqlalchemy import text
-
 from surogate_agent.api.deps import ServerSettings, settings_dep
 from surogate_agent.api.models import (
     ChatHistoryResponse,
@@ -25,7 +23,7 @@ from surogate_agent.api.models import (
     SessionMetaUpdate,
     SessionResponse,
 )
-from surogate_agent.auth.database import engine, get_db
+from surogate_agent.auth.database import get_db
 from surogate_agent.auth.jwt import get_current_user
 from surogate_agent.auth.models import ChatHistory, InputHistory, SessionMetadata, User
 from surogate_agent.core.logging import get_logger
@@ -242,15 +240,18 @@ def clear_session_history(
         db.delete(hist)
         db.commit()
 
-    # 2. Remove LangGraph checkpoint rows for this thread_id.
+    # 2. Remove LangGraph checkpoint rows for this thread_id from checkpoints.db.
     #    The tables are created by langgraph-checkpoint-sqlite and may not
     #    exist on first run — silently skip if they don't.
     try:
-        with engine.connect() as conn:
+        import sqlite3
+        from surogate_agent.core.config import get_checkpointer_path
+        checkpoints_db = get_checkpointer_path()
+        with sqlite3.connect(str(checkpoints_db)) as conn:
             for table in ("checkpoints", "checkpoint_writes", "checkpoint_blobs"):
                 conn.execute(
-                    text(f"DELETE FROM {table} WHERE thread_id = :tid"),  # noqa: S608
-                    {"tid": session_id},
+                    f"DELETE FROM {table} WHERE thread_id = ?",  # noqa: S608
+                    (session_id,),
                 )
             conn.commit()
         log.info("cleared chat history: session=%s user=%s", session_id, current_user.username)

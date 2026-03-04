@@ -156,8 +156,10 @@ def chat(
         config.dev_workspace_dir.mkdir(parents=True, exist_ok=True)
 
         if dev_skill_name:
-            # --skill provided: persistent SQLite history keyed by skill name
-            history_db = config.dev_workspace_dir / ".history.db"
+            # --skill provided: persistent SQLite history keyed by skill name.
+            from surogate_agent.core.config import get_checkpointer_path
+            history_db = get_checkpointer_path()
+            history_db.parent.mkdir(parents=True, exist_ok=True)
             try:
                 from langgraph.checkpoint.sqlite import SqliteSaver
                 # from_conn_string is a @contextmanager — enter it to get the saver instance
@@ -697,10 +699,11 @@ def _print_banner(
         )
         if dev_skill_name:
             resume_tag = "  [dim](resuming)[/dim]" if resuming else "  [dim](new session)[/dim]"
+            from surogate_agent.core.config import get_checkpointer_path as _get_cp_path
             workspace_line = (
-                f"[meta]skill      :[/meta] [bold cyan]{dev_skill_name}[/bold cyan]{resume_tag}\n"
-                f"[meta]workspace  :[/meta] [bold]{session.workspace_dir}[/bold]\n"
-                f"[meta]history db :[/meta] [dim]{config.dev_workspace_dir / '.history.db'}[/dim]"
+                f"[meta]skill         :[/meta] [bold cyan]{dev_skill_name}[/bold cyan]{resume_tag}\n"
+                f"[meta]workspace     :[/meta] [bold]{session.workspace_dir}[/bold]\n"
+                f"[meta]checkpoints db:[/meta] [dim]{_get_cp_path()}[/dim]"
             )
         else:
             workspace_line = (

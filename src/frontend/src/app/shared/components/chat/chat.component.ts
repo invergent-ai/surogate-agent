@@ -307,6 +307,14 @@ export class ChatComponent implements OnChanges, OnDestroy {
 
   /** Restore a previously saved session: replay messages and set the session ID. */
   restoreSession(msgs: ChatMessage[], sessionId: string) {
+    // Advance msgCounter past any IDs already in the restored list so that
+    // the first nextId() call after restore never collides with a restored
+    // message ID.  Without this, handleEvent() finds the wrong (old) bubble
+    // and writes the new response onto it while the new bubble stays empty.
+    for (const m of msgs) {
+      const n = parseInt(m.id.replace('msg-', ''), 10);
+      if (!isNaN(n) && n > msgCounter) msgCounter = n;
+    }
     this.messages.set(msgs.map(m => ({
       ...m,
       timestamp: m.timestamp instanceof Date ? m.timestamp : new Date(m.timestamp as unknown as string),

@@ -66,7 +66,8 @@ ENV SUROGATE_SKILLS_DIR=/data/skills \
     SUROGATE_WORKSPACE_DIR=/data/workspace \
     SUROGATE_MODEL=claude-sonnet-4-6 \
     SUROGATE_STATIC_DIR=/app/static \
-    SUROGATE_DATABASE_URL=sqlite:////data/surogate.db
+    SUROGATE_DATABASE_URL=sqlite:////data/surogate.db \
+    SUROGATE_CHECKPOINTER_DB=/data/checkpoints.db
 
 # Create data directories
 RUN mkdir -p /data/skills /data/sessions /data/workspace

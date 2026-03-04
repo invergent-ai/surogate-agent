@@ -18,6 +18,28 @@ _DEFAULT_MODEL = "claude-sonnet-4-6"
 _DEFAULT_SKILLS_DIR = Path(__file__).parent.parent / "skills" / "builtin"
 
 
+def get_checkpointer_path() -> Path:
+    """Return the path to the LangGraph checkpointer SQLite database.
+
+    Reads ``SUROGATE_CHECKPOINTER_DB`` env var.  When not set, derives the
+    path from ``SUROGATE_SESSIONS_DIR`` so the file lands next to the other
+    data directories rather than wherever the process CWD happens to be.
+    This keeps both databases in one place (e.g. ``/data/``) without
+    requiring an explicit env var in most deployments.
+
+    This database is intentionally separate from ``SUROGATE_DATABASE_URL``
+    (auth/users) so the two can be backed up and migrated independently.
+    """
+    if "SUROGATE_CHECKPOINTER_DB" in os.environ:
+        return Path(os.environ["SUROGATE_CHECKPOINTER_DB"]).resolve()
+    sessions_env = os.environ.get("SUROGATE_SESSIONS_DIR", "")
+    if sessions_env:
+        data_dir = Path(sessions_env).resolve().parent
+    else:
+        data_dir = Path(".").resolve()
+    return data_dir / "checkpoints.db"
+
+
 @dataclass
 class AgentConfig:
     """Configuration for a surogate-agent instance.

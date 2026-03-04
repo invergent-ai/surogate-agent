@@ -21,15 +21,18 @@ class ServerSettings:
     sessions_dir: Path
     workspace_dir: Path
     model: str
+    checkpointer_db: Path
 
 
 @lru_cache(maxsize=1)
 def get_settings() -> ServerSettings:
+    from surogate_agent.core.config import get_checkpointer_path
     return ServerSettings(
         skills_dir=Path(os.environ.get("SUROGATE_SKILLS_DIR", "./skills")),
         sessions_dir=Path(os.environ.get("SUROGATE_SESSIONS_DIR", "./sessions")),
         workspace_dir=Path(os.environ.get("SUROGATE_WORKSPACE_DIR", "./workspace")),
         model=os.environ.get("SUROGATE_MODEL", "claude-sonnet-4-6"),
+        checkpointer_db=get_checkpointer_path(),
     )
 
 

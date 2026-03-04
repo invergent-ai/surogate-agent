@@ -42,6 +42,7 @@ def settings(tmp_dirs):
         sessions_dir=sessions_dir,
         workspace_dir=workspace_dir,
         model="claude-sonnet-4-6",
+        checkpointer_db=tmp_dirs[1].parent / "checkpoints.db",
     )
 
 
