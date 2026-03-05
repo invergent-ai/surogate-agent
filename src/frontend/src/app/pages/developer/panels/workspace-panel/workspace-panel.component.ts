@@ -41,10 +41,22 @@ export class WorkspacePanelComponent implements OnInit {
     });
   }
 
+  /** Human-readable label for a folder name. */
+  folderLabel(folder: string): string {
+    return folder === '_root' ? '(workspace root)' : folder;
+  }
+
   ngOnInit() {
     // Populate autocomplete suggestions from existing workspace folders.
+    // If workspace root has files and no skill is pinned, auto-select it.
     this.workspaceService.list().subscribe({
-      next: ws => this.existingFolders.set(ws.map(w => w.skill)),
+      next: ws => {
+        this.existingFolders.set(ws.map(w => w.skill));
+        if (!this.skill() && !this.localFolder() && ws.some(w => w.skill === '_root')) {
+          this.localFolder.set('_root');
+          this.loadFiles();
+        }
+      },
       error: () => {},
     });
   }

@@ -147,6 +147,8 @@ surogate-agent-api                       # standalone entry point
 | `SUROGATE_DATABASE_URL` | `sqlite:///./surogate.db` (local) / `sqlite:////data/surogate.db` (Docker) | Auth DB — SQLite (dev) or PostgreSQL (prod) |
 | `SUROGATE_JWT_SECRET` | `change-me-in-production` | JWT signing secret |
 | `SUROGATE_ACCESS_TOKEN_EXPIRE_MINUTES` | `480` | JWT token lifetime (minutes) |
+| `SUROGATE_MCP_WORKSPACE_DIR` | `./mcp-workspace` | MCP developer workspace (cloned repos, probe scripts, draft configs) |
+| `SUROGATE_MCP_DIR` | `./mcp_scripts` | MCP production registry (`registry.json` + final `start.sh` files) |
 
 ### Endpoints
 
@@ -166,6 +168,10 @@ All endpoints except `/auth/*` require `Authorization: Bearer <token>`.
 | `GET/POST/DELETE` | `/sessions/{id}/files/{file}` | Session file CRUD |
 | `GET/DELETE` | `/workspace/{skill}` | Workspace info / delete |
 | `GET/POST/DELETE` | `/workspace/{skill}/files/{file}` | Workspace file CRUD |
+| `GET/POST` | `/mcp-servers` | List / register MCP servers (developer only) |
+| `GET/DELETE` | `/mcp-servers/{name}` | Get / remove an MCP server (developer only) |
+| `POST` | `/mcp-servers/{name}/start` | Start a registered MCP server (developer only) |
+| `POST` | `/mcp-servers/{name}/stop` | Stop a running MCP server (developer only) |
 
 ### Key API files
 
@@ -185,4 +191,8 @@ All endpoints except `/auth/*` require `Authorization: Bearer <token>`.
 | `src/surogate_agent/api/routers/skills.py` | Skills CRUD |
 | `src/surogate_agent/api/routers/sessions.py` | Sessions CRUD |
 | `src/surogate_agent/api/routers/workspace.py` | Workspace CRUD |
+| `src/surogate_agent/api/routers/mcp_servers.py` | MCP server CRUD (developer only) |
+| `src/surogate_agent/mcp/registry.py` | `MCPRegistry` + `McpServerEntry` |
+| `src/surogate_agent/mcp/lifecycle.py` | `MCPLifecycle` (start/stop/status/get_tools) |
+| `src/surogate_agent/skills/builtin/mcp-manager/SKILL.md` | Builtin mcp-manager skill |
 | `tests/test_api.py` | 46 API tests (all mocked — no LLM required) |

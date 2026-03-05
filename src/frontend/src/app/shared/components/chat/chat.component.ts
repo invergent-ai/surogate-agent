@@ -328,7 +328,7 @@ export class ChatComponent implements OnChanges, OnDestroy {
               this.sessionCreated.emit(sid);
             }
           }
-          if (ev.data.files?.length) this.filesChanged.emit(ev.data.files);
+          this.filesChanged.emit(ev.data.files ?? []);
           break;
         case 'error':
           msg.blocks.push({ type: 'error', text: ev.data.detail });

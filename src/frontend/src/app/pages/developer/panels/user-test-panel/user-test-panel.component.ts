@@ -60,8 +60,9 @@ export class UserTestPanelComponent {
   onFilesChanged(_files: string[]) {
     // After agent interaction, refresh all files and show only agent-produced
     // files in the output section (exclude anything the user uploaded as input).
-    this.sessionsService.listFiles(this.sessionId()).subscribe(all => {
-      this.outputFiles.set(all.filter(f => !this.inputFileNames.has(f.name)));
+    this.sessionsService.listFiles(this.sessionId()).subscribe({
+      next: all => this.outputFiles.set(all.filter(f => !this.inputFileNames.has(f.name))),
+      error: () => {},   // session dir may not exist yet (empty session)
     });
   }
 

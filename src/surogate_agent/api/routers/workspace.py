@@ -40,13 +40,30 @@ def _file_infos(directory) -> list[FileInfo]:
 # ---------------------------------------------------------------------------
 
 
+def _resolve_skill_dir(ws_root, skill: str):
+    """Map skill name to directory. '_root' is the reserved name for workspace root."""
+    if skill == "_root":
+        return ws_root
+    return ws_root / skill
+
+
 @router.get("", response_model=list[WorkspaceResponse])
 def list_workspaces(settings: ServerSettings = Depends(settings_dep)):
     log.debug("list_workspaces: root=%s", settings.workspace_dir)
     ws_root = settings.workspace_dir
     if not ws_root.is_dir():
         return []
-    return [
+    results = []
+    # Root-level files first (files sitting directly in the workspace root).
+    root_files = _file_infos(ws_root)
+    if root_files:
+        results.append(WorkspaceResponse(
+            skill="_root",
+            workspace_dir=str(ws_root),
+            files=root_files,
+        ))
+    # Skill sub-directories.
+    results += [
         WorkspaceResponse(
             skill=entry.name,
             workspace_dir=str(entry),
@@ -55,6 +72,7 @@ def list_workspaces(settings: ServerSettings = Depends(settings_dep)):
         for entry in sorted(ws_root.iterdir())
         if entry.is_dir() and not entry.name.startswith(".")
     ]
+    return results
 
 
 # ---------------------------------------------------------------------------
@@ -64,7 +82,7 @@ def list_workspaces(settings: ServerSettings = Depends(settings_dep)):
 
 @router.get("/{skill}", response_model=WorkspaceResponse)
 def get_workspace(skill: str, settings: ServerSettings = Depends(settings_dep)):
-    ws_dir = settings.workspace_dir / skill
+    ws_dir = _resolve_skill_dir(settings.workspace_dir, skill)
     if not ws_dir.is_dir():
         raise HTTPException(status_code=404, detail=f"Workspace for skill '{skill}' not found")
     return WorkspaceResponse(
@@ -82,7 +100,9 @@ def get_workspace(skill: str, settings: ServerSettings = Depends(settings_dep)):
 @router.delete("/{skill}")
 def delete_workspace(skill: str, settings: ServerSettings = Depends(settings_dep)):
     log.debug("delete_workspace: %s", skill)
-    ws_dir = settings.workspace_dir / skill
+    if skill == "_root":
+        raise HTTPException(status_code=400, detail="Cannot delete the workspace root")
+    ws_dir = _resolve_skill_dir(settings.workspace_dir, skill)
     if not ws_dir.is_dir():
         log.debug("delete_workspace: workspace '%s' not found", skill)
         raise HTTPException(status_code=404, detail=f"Workspace for skill '{skill}' not found")
@@ -98,7 +118,7 @@ def delete_workspace(skill: str, settings: ServerSettings = Depends(settings_dep
 
 @router.get("/{skill}/files", response_model=list[FileInfo])
 def list_workspace_files(skill: str, settings: ServerSettings = Depends(settings_dep)):
-    ws_dir = settings.workspace_dir / skill
+    ws_dir = _resolve_skill_dir(settings.workspace_dir, skill)
     if not ws_dir.is_dir():
         raise HTTPException(status_code=404, detail=f"Workspace for skill '{skill}' not found")
     return _file_infos(ws_dir)
@@ -115,7 +135,7 @@ def download_workspace_file(
     file: str,
     settings: ServerSettings = Depends(settings_dep),
 ):
-    ws_dir = settings.workspace_dir / skill
+    ws_dir = _resolve_skill_dir(settings.workspace_dir, skill)
     if not ws_dir.is_dir():
         raise HTTPException(status_code=404, detail=f"Workspace for skill '{skill}' not found")
     target = ws_dir / file
@@ -139,7 +159,7 @@ async def upload_workspace_file(
     filename: str = Query("", description="Override destination filename"),
     settings: ServerSettings = Depends(settings_dep),
 ):
-    ws_dir = settings.workspace_dir / skill
+    ws_dir = _resolve_skill_dir(settings.workspace_dir, skill)
     ws_dir.mkdir(parents=True, exist_ok=True)
     dest_name = filename or upload.filename or "upload"
     target = ws_dir / dest_name
@@ -160,7 +180,7 @@ def delete_workspace_file(
     file: str,
     settings: ServerSettings = Depends(settings_dep),
 ):
-    ws_dir = settings.workspace_dir / skill
+    ws_dir = _resolve_skill_dir(settings.workspace_dir, skill)
     if not ws_dir.is_dir():
         raise HTTPException(status_code=404, detail=f"Workspace for skill '{skill}' not found")
     target = ws_dir / file

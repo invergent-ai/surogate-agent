@@ -75,6 +75,9 @@ class AgentConfig:
     # Developer's persistent scratch area — separate from skill definition files.
     # Survives across development sessions; never mixed into skill directories.
     dev_workspace_dir: Path = field(default_factory=lambda: Path(os.environ.get("SUROGATE_WORKSPACE_DIR", "") or Path.cwd() / "workspace"))
+    mcp_workspace_dir: Path = field(default_factory=lambda: Path(os.environ.get("SUROGATE_MCP_WORKSPACE_DIR", "") or Path.cwd() / "mcp-workspace"))
+    # Production registry dir — registry.json and final start.sh files read by MCPLifecycle.
+    mcp_scripts_dir: Path = field(default_factory=lambda: Path(os.environ.get("SUROGATE_MCP_DIR", "") or Path.cwd() / "mcp_scripts"))
     sessions_dir: Path = field(default_factory=lambda: Path(os.environ.get("SUROGATE_SESSIONS_DIR", "") or Path.cwd() / "sessions"))
     extra_tools: list = field(default_factory=list)
     max_iterations: int = 50
@@ -103,6 +106,8 @@ class AgentConfig:
         self.skills_dirs = [Path(p) for p in self.skills_dirs]
         self.user_skills_dir = Path(self.user_skills_dir)
         self.dev_workspace_dir = Path(self.dev_workspace_dir)
+        self.mcp_workspace_dir = Path(self.mcp_workspace_dir)
+        self.mcp_scripts_dir = Path(self.mcp_scripts_dir)
         self.sessions_dir = Path(self.sessions_dir)
 
     @property

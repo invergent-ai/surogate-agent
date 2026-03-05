@@ -240,7 +240,7 @@ def create_agent(
             )
 
     # Build per-role path permission lists for the guarded backends.
-    # DEVELOPER: read-write for user skills + dev workspace;
+    # DEVELOPER: read-write for user skills + dev workspace + both MCP dirs;
     #            read-only for builtin skills + user sessions + extra skill dirs.
     # USER:      read-write for their session workspace only;
     #            read-only for user skills + builtin skills + extra skill dirs.
@@ -253,7 +253,12 @@ def create_agent(
         if d.resolve() not in {_DEFAULT_SKILLS_DIR.resolve(), config.user_skills_dir.resolve()}
     ]
     if role == Role.DEVELOPER:
-        guard_rw = [config.user_skills_dir.resolve(), config.dev_workspace_dir.resolve()]
+        guard_rw = [
+            config.user_skills_dir.resolve(),
+            config.dev_workspace_dir.resolve(),
+            config.mcp_workspace_dir.resolve(),
+            config.mcp_scripts_dir.resolve(),
+        ]
         guard_ro = [_DEFAULT_SKILLS_DIR.resolve(), config.sessions_dir.resolve()] + extra_skill_dirs
     else:
         guard_rw = [session.workspace_dir.resolve()]
@@ -383,6 +388,28 @@ def _build_user_skill_catalog(config: AgentConfig) -> str:
     )
 
 
+def _build_mcp_file_output_section(config: AgentConfig, output_dir: str) -> str:
+    """Return a system-prompt section directing MCP tool file output to the right directory.
+
+    Only emitted when MCP tools are actually injected (config.extra_tools non-empty).
+    """
+    if not config.extra_tools:
+        return ""
+    tool_names = ", ".join(
+        f"`{getattr(t, 'name', str(t))}`" for t in config.extra_tools[:10]
+    )
+    suffix = f" … and {len(config.extra_tools) - 10} more" if len(config.extra_tools) > 10 else ""
+    return (
+        f"## MCP tool file output\n\n"
+        f"You have MCP tools available: {tool_names}{suffix}.\n\n"
+        f"**Any time an MCP tool creates, converts, or writes a file, you MUST pass "
+        f"`{output_dir}` (or a filename inside it) as the output path argument.** "
+        f"Never use a bare filename, the project root, or any other directory. "
+        f"If the user specifies a filename (e.g. `report.docx`), the full path must be "
+        f"`{output_dir}/<filename>`.\n"
+    )
+
+
 def _build_system_suffix(
     role_ctx: RoleContext,
     config: AgentConfig,
@@ -439,10 +466,15 @@ def _build_system_suffix(
 
         builtin_dir = _DEFAULT_SKILLS_DIR.resolve()
         sessions_dir = config.sessions_dir.resolve()
+        mcp_workspace = config.mcp_workspace_dir.resolve()
+        mcp_scripts = config.mcp_scripts_dir.resolve()
+        dev_mcp_output_dir = str(dev_workspace / active_skill) if active_skill else str(dev_workspace)
+        mcp_section = _build_mcp_file_output_section(config, dev_mcp_output_dir)
         parts.append(
             f"You are operating in DEVELOPER mode.\n"
             f"You have access to the skill-development meta-skill.\n"
             f"{execute_section}\n"
+            f"{mcp_section}\n"
             f"{skill_section}\n"
             f"## File access rules\n\n"
             f"### READ-WRITE paths — you may create, edit, and delete files here\n\n"
@@ -458,17 +490,30 @@ def _build_system_suffix(
             f"   Files here are NOT shipped with any skill and NOT visible to users.\n"
             f"   Only copy a file into the skill directory when you deliberately want\n"
             f"   it to be part of that skill.\n\n"
+            f"3. **MCP workspace**  →  `{mcp_workspace}/`\n"
+            f"   Your working area for MCP server management (mcp-manager skill).\n"
+            f"   Use this for all draft and intermediate work: cloning repos, writing\n"
+            f"   probe scripts, testing startup configs.\n"
+            f"   Layout:\n"
+            f"   - `{mcp_workspace}/repos/<server-name>/`  — cloned server repo\n"
+            f"   - `{mcp_workspace}/<server-name>/probe.py` — tool-probe helper script\n\n"
+            f"4. **MCP scripts (production)**  →  `{mcp_scripts}/`\n"
+            f"   The final production registry read by the server at startup.\n"
+            f"   Only write here when the server is ready to be registered.\n"
+            f"   Layout:\n"
+            f"   - `{mcp_scripts}/registry.json`          — managed by the API (do not edit)\n"
+            f"   - `{mcp_scripts}/<server-name>/start.sh` — final startup script the server runs\n\n"
             f"### READ-ONLY paths — you may read but MUST NOT modify or delete\n\n"
-            f"3. **Built-in skills**  →  `{builtin_dir}/`\n"
+            f"5. **Built-in skills**  →  `{builtin_dir}/`\n"
             f"   Package-bundled skills (e.g. the skill-developer meta-skill).\n"
             f"   These are part of the surogate-agent package and must not be edited.\n"
             f"   If you need a customised version, create a new skill under {skills_root}/.\n\n"
-            f"4. **User session workspaces**  →  `{sessions_dir}/<session-id>/`\n"
+            f"6. **User session workspaces**  →  `{sessions_dir}/<session-id>/`\n"
             f"   Files uploaded or produced by end-users during their chat sessions.\n"
             f"   You may read them (e.g. to debug a skill), but never write or delete.\n\n"
             f"### FORBIDDEN — never access anything outside the paths above\n\n"
             f"   Any path not listed above is off-limits — do not read, write, or\n"
-            f"   execute files outside the four locations described here.\n\n"
+            f"   execute files outside the six locations described here.\n\n"
             f"### Current workspace contents (snapshot at session start)\n"
             f"{workspace_snapshot}"
         )
@@ -484,9 +529,11 @@ def _build_system_suffix(
         # section (which comes later in the prompt) describes skill dirs as
         # read-only files — confusing the LLM about whether to use them.
         skill_catalog = _build_user_skill_catalog(config)
+        mcp_section = _build_mcp_file_output_section(config, str(user_workspace))
 
         parts.append(
             f"You are operating in USER mode.\n\n"
+            f"{mcp_section}\n"
             f"{skill_catalog}"
             f"## File access rules\n\n"
             f"### READ-WRITE paths — you may create, edit, and delete files here\n\n"

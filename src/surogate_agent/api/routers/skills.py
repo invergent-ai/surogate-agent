@@ -80,7 +80,8 @@ def list_skills(
     registry = _build_registry(settings)
     if role == "developer":
         paths = registry.paths_for_role(Role.DEVELOPER)
-        infos = [s for s in registry.all_skills() if s.path in paths and s.name != "skill-developer"]
+        _hidden = {"skill-developer", "mcp-manager"}
+        infos = [s for s in registry.all_skills() if s.path in paths and s.name not in _hidden]
     elif role == "user":
         paths = registry.paths_for_role(Role.USER)
         infos = [s for s in registry.all_skills() if s.path in paths]

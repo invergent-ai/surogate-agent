@@ -133,3 +133,37 @@ class InputHistoryResponse(BaseModel):
 class SkillImportResponse(BaseModel):
     imported: list[str]
     skipped: list[str]
+
+
+# ---------------------------------------------------------------------------
+# MCP server models
+# ---------------------------------------------------------------------------
+
+
+class McpToolInfo(BaseModel):
+    name: str
+    description: str
+
+
+class McpServerCreate(BaseModel):
+    name: str
+    repo_url: str = ""
+    start_command: str = ""
+    cwd: str = ""
+    transport: str = "sse"
+    host: str = "localhost"
+    port: int = 8101
+    tools: list[McpToolInfo] = Field(default_factory=list)
+
+
+class McpServerResponse(BaseModel):
+    name: str
+    repo_url: str
+    start_command: str
+    cwd: str
+    transport: str
+    host: str
+    port: int
+    tools: list[McpToolInfo]
+    registered_at: str
+    status: str

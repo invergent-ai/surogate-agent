@@ -38,7 +38,13 @@
       "Bash(npm install:*)",
       "WebFetch(domain:openrouter.ai)",
       "WebFetch(domain:docs.langchain.com)",
-      "WebFetch(domain:reference.langchain.com)"
+      "WebFetch(domain:reference.langchain.com)",
+      "Read(//usr/bin/**)",
+      "Read(//home/dan/.local/bin/**)",
+      "Bash(uv python list)",
+      "Bash(/work/Product/Surogate/agent/.venv/bin/python3:*)",
+      "Bash(/work/Product/Surogate/agent/.venv/bin/pip install:*)",
+      "Bash(.venv/bin/python3:*)"
     ]
   }
 }

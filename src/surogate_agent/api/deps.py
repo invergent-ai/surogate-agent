@@ -22,6 +22,8 @@ class ServerSettings:
     workspace_dir: Path
     model: str
     checkpointer_db: Path
+    mcp_workspace_dir: Path = Path("./mcp-workspace")
+    mcp_scripts_dir: Path = Path("./mcp_scripts")
 
 
 @lru_cache(maxsize=1)
@@ -33,6 +35,8 @@ def get_settings() -> ServerSettings:
         workspace_dir=Path(os.environ.get("SUROGATE_WORKSPACE_DIR", "./workspace")),
         model=os.environ.get("SUROGATE_MODEL", "claude-sonnet-4-6"),
         checkpointer_db=get_checkpointer_path(),
+        mcp_workspace_dir=Path(os.environ.get("SUROGATE_MCP_WORKSPACE_DIR", "./mcp-workspace")),
+        mcp_scripts_dir=Path(os.environ.get("SUROGATE_MCP_DIR", "./mcp_scripts")),
     )
 
 

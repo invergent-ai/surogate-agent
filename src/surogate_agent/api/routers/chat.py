@@ -141,6 +141,8 @@ async def _stream_chat(
             user_skills_dir=settings.skills_dir,
             sessions_dir=settings.sessions_dir,
             dev_workspace_dir=settings.workspace_dir,
+            mcp_workspace_dir=settings.mcp_workspace_dir,
+            mcp_scripts_dir=settings.mcp_scripts_dir,
             allow_execute=effective_allow_execute,
             api_key=req.api_key,
             openrouter_provider=openrouter_provider,
@@ -172,6 +174,10 @@ async def _stream_chat(
                 else sm.new_session()
             )
             thread_id = session.session_id
+            # Eagerly create the session workspace so MCP tools (which write
+            # directly to the filesystem path) don't fail with "directory does
+            # not exist" on the first message of a new session.
+            session.workspace_dir.mkdir(parents=True, exist_ok=True)
 
         # Checkpointer — dedicated checkpoints.db, separate from the auth DB.
         checkpointer = None
@@ -198,6 +204,18 @@ async def _stream_chat(
                 log.debug("no checkpointer available (langgraph not installed)")
         else:
             log.debug("using persistent SQLite checkpointer")
+
+        # Inject MCP tools for all roles (optional — never blocks chat)
+        try:
+            from surogate_agent.mcp.lifecycle import MCPLifecycle
+            from surogate_agent.mcp.registry import MCPRegistry
+            _mcp_registry = MCPRegistry(settings.mcp_scripts_dir)
+            _mcp_lifecycle = MCPLifecycle(settings.mcp_scripts_dir)
+            for _entry in _mcp_registry.list():
+                if _mcp_lifecycle.get_status(_entry) in ("running", "available"):
+                    config.extra_tools.extend(await _mcp_lifecycle.get_tools(_entry))
+        except Exception as _mcp_exc:
+            log.debug("MCP tool injection skipped: %s", _mcp_exc)
 
         # Create agent
         agent = create_agent(

@@ -9,7 +9,7 @@
       <span class="text-[10px]">{{ expanded() ? '▼' : '▶' }}</span>
       Workspace
       @if (effectiveFolder()) {
-        <span class="font-mono text-amber-600 dark:text-amber-400">/ {{ effectiveFolder() }}</span>
+        <span class="font-mono text-amber-600 dark:text-amber-400">/ {{ folderLabel(effectiveFolder()) }}</span>
       }
     </button>
     @if (effectiveFolder()) {
@@ -40,7 +40,7 @@
           />
           <datalist id="workspace-folder-list">
             @for (f of existingFolders(); track f) {
-              <option [value]="f"></option>
+              <option [value]="f">{{ folderLabel(f) }}</option>
             }
           </datalist>
         </div>

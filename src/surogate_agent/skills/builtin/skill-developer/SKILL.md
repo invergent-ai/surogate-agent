@@ -7,7 +7,7 @@ description: >
   list available skills, or understand the skill format.
 role-restriction: developer
 version: 0.1.0
-allowed-tools: write_file edit_file read_file ls glob write_todos execute
+allowed-tools: write_file edit_file read_file ls glob grep write_todos execute task
 ---
 
 # Skill Developer — Instructions

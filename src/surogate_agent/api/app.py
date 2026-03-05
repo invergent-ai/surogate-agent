@@ -17,6 +17,7 @@ from fastapi.responses import FileResponse
 
 from surogate_agent.api.routers import chat, sessions, skills, workspace
 from surogate_agent.api.routers import auth as auth_router
+from surogate_agent.api.routers import mcp_servers
 from surogate_agent.core.logging import get_logger, setup_logging
 
 log = get_logger(__name__)
@@ -40,8 +41,26 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         import warnings
         log.error("could not create auth tables: %s", exc, exc_info=True)
         warnings.warn(f"Could not create auth tables: {exc}", stacklevel=2)
+
+    # Start registered MCP servers
+    from surogate_agent.api.deps import get_settings
+    from surogate_agent.mcp.lifecycle import MCPLifecycle
+    from surogate_agent.mcp.registry import MCPRegistry
+    _settings = get_settings()
+    _mcp_lifecycle = MCPLifecycle(_settings.mcp_scripts_dir)
+    _mcp_registry = MCPRegistry(_settings.mcp_scripts_dir)
+    try:
+        _mcp_lifecycle.start_all(_mcp_registry)
+        app.state.mcp_lifecycle = _mcp_lifecycle
+    except Exception as exc:
+        log.warning("MCP startup error: %s", exc)
+
     yield
     log.info("surogate-agent API shut down")
+    try:
+        _mcp_lifecycle.stop_all()
+    except Exception as exc:
+        log.warning("MCP shutdown error: %s", exc)
 
 
 def create_app() -> FastAPI:
@@ -67,11 +86,12 @@ def create_app() -> FastAPI:
     # All API routes are mounted under /api so they coexist cleanly with the
     # Angular SPA catch-all at /.  The dev proxy (proxy.conf.json) forwards
     # /api/** to localhost:8000/api/** without stripping the prefix.
-    application.include_router(auth_router.router, prefix="/api")
-    application.include_router(chat.router,        prefix="/api")
-    application.include_router(skills.router,      prefix="/api")
-    application.include_router(sessions.router,    prefix="/api")
-    application.include_router(workspace.router,   prefix="/api")
+    application.include_router(auth_router.router,    prefix="/api")
+    application.include_router(chat.router,           prefix="/api")
+    application.include_router(skills.router,         prefix="/api")
+    application.include_router(sessions.router,       prefix="/api")
+    application.include_router(workspace.router,      prefix="/api")
+    application.include_router(mcp_servers.router,    prefix="/api")
 
     # Serve Angular SPA at root when a build dir is present (skipped in dev).
     # A catch-all GET route is used instead of StaticFiles mount so that
@@ -102,8 +122,9 @@ def create_app() -> FastAPI:
                     "auth":      "POST /api/auth/register  ·  POST /api/auth/login  ·  GET /api/auth/me",
                     "chat":      "POST /api/chat",
                     "skills":    "GET/POST /api/skills  ·  GET/DELETE /api/skills/{name}  ·  POST /api/skills/{name}/validate",
-                    "sessions":  "GET /api/sessions  ·  GET/DELETE /api/sessions/{id}  ·  GET/POST/DELETE /api/sessions/{id}/files/{file}",
-                    "workspace": "GET /api/workspace  ·  GET/DELETE /api/workspace/{skill}  ·  GET/POST/DELETE /api/workspace/{skill}/files/{file}",
+                    "sessions":    "GET /api/sessions  ·  GET/DELETE /api/sessions/{id}  ·  GET/POST/DELETE /api/sessions/{id}/files/{file}",
+                    "workspace":   "GET /api/workspace  ·  GET/DELETE /api/workspace/{skill}  ·  GET/POST/DELETE /api/workspace/{skill}/files/{file}",
+                    "mcp-servers": "GET/POST /api/mcp-servers  ·  GET/DELETE /api/mcp-servers/{name}",
                 },
             })
 

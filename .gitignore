@@ -26,3 +26,5 @@ htmlcov/
 /src/frontend/surogate.db-shm
 /src/frontend/surogate.db-wal
 /checkpoints.db
+/mcp-workspace/
+/mcp_scripts/

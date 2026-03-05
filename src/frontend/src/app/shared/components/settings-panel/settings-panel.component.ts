@@ -5,6 +5,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { SettingsService } from '../../../core/services/settings.service';
 import { ToastService } from '../../../core/services/toast.service';
+import { McpPanelComponent } from '../mcp-panel/mcp-panel.component';
 
 export const PRESET_MODELS = [
   'claude-opus-4-6',
@@ -21,7 +22,7 @@ export const PRESET_MODELS = [
 @Component({
   selector: 'app-settings-panel',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, McpPanelComponent],
   templateUrl: './settings-panel.component.html',
 })
 export class SettingsPanelComponent implements OnChanges {
@@ -32,6 +33,8 @@ export class SettingsPanelComponent implements OnChanges {
   private toast    = inject(ToastService);
 
   presetModels = PRESET_MODELS;
+
+  activeTab: 'settings' | 'mcp' = 'settings';
 
   draftModel    = '';
   draftApiKey   = '';
@@ -47,6 +50,7 @@ export class SettingsPanelComponent implements OnChanges {
       this.draftProvider = this.settings.openrouterProvider();
       this.showKey       = false;
       this.saveError.set('');
+      this.activeTab     = 'settings';
     }
   }
 

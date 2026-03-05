@@ -5,7 +5,7 @@
     (click)="onBackdropClick($event)"
   >
     <!-- Dialog -->
-    <div class="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden border border-gray-100 dark:border-zinc-800">
+    <div class="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden border border-gray-100 dark:border-zinc-800">
 
       <!-- Header -->
       <div class="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-zinc-800">
@@ -22,120 +22,168 @@
         </button>
       </div>
 
-      <!-- Body -->
-      <div class="px-6 py-5 flex flex-col gap-5">
+      <!-- Tab bar -->
+      <div class="flex border-b border-gray-100 dark:border-zinc-800 px-6">
+        <button
+          type="button"
+          (click)="activeTab = 'settings'"
+          class="px-1 py-3 text-sm font-medium border-b-2 transition-colors mr-6"
+          [class.border-amber-400]="activeTab === 'settings'"
+          [class.text-gray-900]="activeTab === 'settings'"
+          [class.dark:text-zinc-50]="activeTab === 'settings'"
+          [class.border-transparent]="activeTab !== 'settings'"
+          [class.text-gray-500]="activeTab !== 'settings'"
+          [class.dark:text-zinc-400]="activeTab !== 'settings'"
+          [class.hover:text-gray-700]="activeTab !== 'settings'"
+          [class.dark:hover:text-zinc-200]="activeTab !== 'settings'"
+        >
+          Model &amp; Keys
+        </button>
+        <button
+          type="button"
+          (click)="activeTab = 'mcp'"
+          class="px-1 py-3 text-sm font-medium border-b-2 transition-colors"
+          [class.border-amber-400]="activeTab === 'mcp'"
+          [class.text-gray-900]="activeTab === 'mcp'"
+          [class.dark:text-zinc-50]="activeTab === 'mcp'"
+          [class.border-transparent]="activeTab !== 'mcp'"
+          [class.text-gray-500]="activeTab !== 'mcp'"
+          [class.dark:text-zinc-400]="activeTab !== 'mcp'"
+          [class.hover:text-gray-700]="activeTab !== 'mcp'"
+          [class.dark:hover:text-zinc-200]="activeTab !== 'mcp'"
+        >
+          MCP Servers
+        </button>
+      </div>
 
-        <!-- Save error banner -->
-        @if (saveError()) {
-          <div class="px-3 py-2.5 rounded-lg bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 text-sm text-red-700 dark:text-red-400">
-            {{ saveError() }}
+      <!-- Body -->
+      <div class="px-6 py-5 max-h-[60vh] overflow-y-auto">
+
+        <!-- Model & Keys tab -->
+        @if (activeTab === 'settings') {
+          <div class="flex flex-col gap-5">
+
+            <!-- Save error banner -->
+            @if (saveError()) {
+              <div class="px-3 py-2.5 rounded-lg bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 text-sm text-red-700 dark:text-red-400">
+                {{ saveError() }}
+              </div>
+            }
+
+            <!-- Model (required) -->
+            <div class="flex flex-col gap-1.5">
+              <label for="settings-model" class="text-sm font-medium text-gray-700 dark:text-zinc-300">
+                Model <span class="text-red-500">*</span>
+              </label>
+              <input
+                id="settings-model"
+                name="settings-model"
+                [(ngModel)]="draftModel"
+                list="model-presets"
+                placeholder="claude-sonnet-4-6"
+                class="w-full rounded-lg border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-50 placeholder:text-gray-400 dark:placeholder:text-zinc-500 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 dark:focus:ring-amber-500 focus:border-transparent transition-colors"
+                [class.border-red-300]="!draftModel.trim()"
+              />
+              <datalist id="model-presets">
+                <option *ngFor="let m of presetModels" [value]="m"></option>
+              </datalist>
+            </div>
+
+            <!-- API Key (required) -->
+            <div class="flex flex-col gap-1.5">
+              <label for="settings-apikey" class="text-sm font-medium text-gray-700 dark:text-zinc-300">
+                API Key <span class="text-red-500">*</span>
+              </label>
+              <div class="relative">
+                <input
+                  id="settings-apikey"
+                  name="settings-apikey"
+                  [(ngModel)]="draftApiKey"
+                  [type]="showKey ? 'text' : 'password'"
+                  placeholder="sk-ant-…  or  sk-…"
+                  autocomplete="off"
+                  class="w-full rounded-lg border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-50 placeholder:text-gray-400 dark:placeholder:text-zinc-500 px-3 py-2 pr-10 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-amber-400 dark:focus:ring-amber-500 focus:border-transparent transition-colors"
+                  [class.border-red-300]="!draftApiKey.trim()"
+                />
+                <button
+                  type="button"
+                  (click)="toggleShowKey()"
+                  class="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300"
+                  [attr.aria-label]="showKey ? 'Hide key' : 'Show key'"
+                >
+                  @if (showKey) {
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88L6.59 6.59m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/>
+                    </svg>
+                  } @else {
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                    </svg>
+                  }
+                </button>
+              </div>
+              <p class="text-xs text-gray-400 dark:text-zinc-500">Your key is stored securely per account on the server.</p>
+            </div>
+
+            <!-- OpenRouter Provider (optional) -->
+            <div class="flex flex-col gap-1.5">
+              <div class="flex items-center gap-1.5">
+                <label for="settings-provider" class="text-sm font-medium text-gray-700 dark:text-zinc-300">
+                  OpenRouter Provider
+                </label>
+                <div class="relative group">
+                  <svg class="w-3.5 h-3.5 text-gray-400 dark:text-zinc-500 cursor-help" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 16v-4m0-4h.01"/>
+                  </svg>
+                  <div class="pointer-events-none absolute left-1/2 bottom-full mb-2 -translate-x-1/2 w-64 rounded-lg bg-gray-900 dark:bg-zinc-700 px-3 py-2 text-xs text-white shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                    When using an OpenRouter model (e.g. <span class="font-mono">minimax/MiniMax-M2.5</span>), enter a preferred provider name to route requests to a specific backend. Leave blank for automatic routing.
+                    <div class="absolute left-1/2 top-full -translate-x-1/2 border-4 border-transparent border-t-gray-900 dark:border-t-zinc-700"></div>
+                  </div>
+                </div>
+              </div>
+              <input
+                id="settings-provider"
+                name="settings-provider"
+                [(ngModel)]="draftProvider"
+                placeholder="e.g. MiniMax"
+                autocomplete="off"
+                class="w-full rounded-lg border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-50 placeholder:text-gray-400 dark:placeholder:text-zinc-500 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 dark:focus:ring-amber-500 focus:border-transparent transition-colors"
+              />
+              <p class="text-xs text-gray-400 dark:text-zinc-500">Optional. Only applies when using an OpenRouter model.</p>
+            </div>
           </div>
         }
 
-        <!-- Model (required) -->
-        <div class="flex flex-col gap-1.5">
-          <label for="settings-model" class="text-sm font-medium text-gray-700 dark:text-zinc-300">
-            Model <span class="text-red-500">*</span>
-          </label>
-          <input
-            id="settings-model"
-            name="settings-model"
-            [(ngModel)]="draftModel"
-            list="model-presets"
-            placeholder="claude-sonnet-4-6"
-            class="w-full rounded-lg border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-50 placeholder:text-gray-400 dark:placeholder:text-zinc-500 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 dark:focus:ring-amber-500 focus:border-transparent transition-colors"
-            [class.border-red-300]="!draftModel.trim()"
-          />
-          <datalist id="model-presets">
-            <option *ngFor="let m of presetModels" [value]="m"></option>
-          </datalist>
-        </div>
+        <!-- MCP Servers tab -->
+        @if (activeTab === 'mcp') {
+          <app-mcp-panel />
+        }
 
-        <!-- API Key (required) -->
-        <div class="flex flex-col gap-1.5">
-          <label for="settings-apikey" class="text-sm font-medium text-gray-700 dark:text-zinc-300">
-            API Key <span class="text-red-500">*</span>
-          </label>
-          <div class="relative">
-            <input
-              id="settings-apikey"
-              name="settings-apikey"
-              [(ngModel)]="draftApiKey"
-              [type]="showKey ? 'text' : 'password'"
-              placeholder="sk-ant-…  or  sk-…"
-              autocomplete="off"
-              class="w-full rounded-lg border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-50 placeholder:text-gray-400 dark:placeholder:text-zinc-500 px-3 py-2 pr-10 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-amber-400 dark:focus:ring-amber-500 focus:border-transparent transition-colors"
-              [class.border-red-300]="!draftApiKey.trim()"
-            />
-            <button
-              type="button"
-              (click)="toggleShowKey()"
-              class="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300"
-              [attr.aria-label]="showKey ? 'Hide key' : 'Show key'"
-            >
-              @if (showKey) {
-                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88L6.59 6.59m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/>
-                </svg>
-              } @else {
-                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
-                </svg>
-              }
-            </button>
-          </div>
-          <p class="text-xs text-gray-400 dark:text-zinc-500">Your key is stored securely per account on the server.</p>
-        </div>
-
-        <!-- OpenRouter Provider (optional) -->
-        <div class="flex flex-col gap-1.5">
-          <div class="flex items-center gap-1.5">
-            <label for="settings-provider" class="text-sm font-medium text-gray-700 dark:text-zinc-300">
-              OpenRouter Provider
-            </label>
-            <div class="relative group">
-              <svg class="w-3.5 h-3.5 text-gray-400 dark:text-zinc-500 cursor-help" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <circle cx="12" cy="12" r="10"/>
-                <path stroke-linecap="round" stroke-linejoin="round" d="M12 16v-4m0-4h.01"/>
-              </svg>
-              <div class="pointer-events-none absolute left-1/2 bottom-full mb-2 -translate-x-1/2 w-64 rounded-lg bg-gray-900 dark:bg-zinc-700 px-3 py-2 text-xs text-white shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                When using an OpenRouter model (e.g. <span class="font-mono">minimax/MiniMax-M2.5</span>), enter a preferred provider name to route requests to a specific backend. Leave blank for automatic routing.
-                <div class="absolute left-1/2 top-full -translate-x-1/2 border-4 border-transparent border-t-gray-900 dark:border-t-zinc-700"></div>
-              </div>
-            </div>
-          </div>
-          <input
-            id="settings-provider"
-            name="settings-provider"
-            [(ngModel)]="draftProvider"
-            placeholder="e.g. MiniMax"
-            autocomplete="off"
-            class="w-full rounded-lg border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-50 placeholder:text-gray-400 dark:placeholder:text-zinc-500 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 dark:focus:ring-amber-500 focus:border-transparent transition-colors"
-          />
-          <p class="text-xs text-gray-400 dark:text-zinc-500">Optional. Only applies when using an OpenRouter model.</p>
-        </div>
       </div>
 
-      <!-- Footer -->
-      <div class="flex justify-end gap-2 px-6 py-4 border-t border-gray-100 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800/50">
-        <button
-          type="button"
-          (click)="cancel()"
-          [disabled]="saving()"
-          class="px-4 py-2 text-sm text-gray-600 dark:text-zinc-400 hover:text-gray-800 dark:hover:text-zinc-200 rounded-lg hover:bg-gray-100 dark:hover:bg-zinc-700 disabled:opacity-40 transition-colors"
-        >
-          Cancel
-        </button>
-        <button
-          type="button"
-          (click)="save()"
-          [disabled]="!canSave"
-          class="px-4 py-2 text-sm font-medium text-zinc-900 bg-brand hover:bg-brand-500 rounded-lg disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-        >
-          {{ saving() ? 'Saving…' : 'Save' }}
-        </button>
-      </div>
+      <!-- Footer (only for Model & Keys tab) -->
+      @if (activeTab === 'settings') {
+        <div class="flex justify-end gap-2 px-6 py-4 border-t border-gray-100 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800/50">
+          <button
+            type="button"
+            (click)="cancel()"
+            [disabled]="saving()"
+            class="px-4 py-2 text-sm text-gray-600 dark:text-zinc-400 hover:text-gray-800 dark:hover:text-zinc-200 rounded-lg hover:bg-gray-100 dark:hover:bg-zinc-700 disabled:opacity-40 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            (click)="save()"
+            [disabled]="!canSave"
+            class="px-4 py-2 text-sm font-medium text-zinc-900 bg-brand hover:bg-brand-500 rounded-lg disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            {{ saving() ? 'Saving…' : 'Save' }}
+          </button>
+        </div>
+      }
 
     </div>
   </div>
