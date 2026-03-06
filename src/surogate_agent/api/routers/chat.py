@@ -183,7 +183,7 @@ async def _stream_chat(
         checkpointer = None
         _checkpointer_ctx = None
         needs_checkpointer = (
-            (role == Role.DEVELOPER and req.skill.strip())
+            (role == Role.DEVELOPER and (req.skill.strip() or req.session_id.strip()))
             or (role == Role.USER and req.session_id)
         )
         if needs_checkpointer:
