@@ -47,16 +47,13 @@ export class WorkspacePanelComponent implements OnInit {
   }
 
   ngOnInit() {
-    // Populate autocomplete suggestions from existing workspace folders.
-    // If workspace root has files and no skill is pinned, auto-select it.
+    // Always default to _root; populate autocomplete from existing workspace folders.
+    if (!this.skill() && !this.localFolder()) {
+      this.localFolder.set('_root');
+      this.loadFiles();
+    }
     this.workspaceService.list().subscribe({
-      next: ws => {
-        this.existingFolders.set(ws.map(w => w.skill));
-        if (!this.skill() && !this.localFolder() && ws.some(w => w.skill === '_root')) {
-          this.localFolder.set('_root');
-          this.loadFiles();
-        }
-      },
+      next: ws => this.existingFolders.set(ws.map(w => w.skill)),
       error: () => {},
     });
   }

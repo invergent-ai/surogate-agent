@@ -422,6 +422,16 @@ class TestWorkspace:
         assert resp.status_code == 200
         assert not (settings.workspace_dir / "remove-me").exists()
 
+    def test_delete_workspace_root(self, client, settings):
+        # _root is a real subdirectory workspace/_root/
+        root_dir = settings.workspace_dir / "_root"
+        root_dir.mkdir(parents=True, exist_ok=True)
+        (root_dir / "scratch.txt").write_text("temp")
+
+        resp = client.delete("/api/workspace/_root")
+        assert resp.status_code == 200
+        assert not root_dir.exists()
+
     def test_workspace_file_upload_download_delete(self, client, settings):
         self._make_workspace(settings, "ws-skill")
         # Upload

@@ -26,6 +26,32 @@ default behavior. There are no exceptions.
 
 ---
 
+### 0. ALWAYS use `workspace/_root/` when no skill is named
+
+**Trigger:** any file write, scratch note, test file, or ad-hoc task that is not
+explicitly part of a named skill under development.
+
+**Rule:** files MUST go into a subdirectory of `workspace/`. Writing directly to
+`workspace/` (e.g. `workspace/empty.txt`) is forbidden.
+
+| Situation | Correct path |
+|-----------|-------------|
+| General task, no skill mentioned | `workspace/_root/<file>` |
+| Working on skill `my-skill` | `workspace/my-skill/<file>` |
+| **NEVER** | `workspace/<file>` ← no subdirectory |
+
+```
+# WRONG — file lands directly in workspace root
+write_file("workspace/empty.txt", "")
+
+# RIGHT — file goes inside _root subdirectory
+write_file("workspace/_root/empty.txt", "")
+```
+
+This applies to every file operation: `write_file`, `edit_file`, `execute`, `cp`.
+
+---
+
 ### 1. ALWAYS write a Python helper script for any file-processing skill
 
 **Trigger:** the skill description mentions any of these — `.docx`, `.pdf`,
@@ -190,7 +216,10 @@ skills/                          ← skill DEFINITIONS (what ships to users)
     └── prompt.md                ← finalized helper, part of the skill
 
 workspace/                       ← developer WORKING FILES (never shipped)
-└── <skill-name>/                ← one sub-dir per skill under development
+├── _root/                       ← DEFAULT scratch area (no specific skill)
+│   ├── notes.md                 ← general notes, experiments, research
+│   └── scratch.py               ← ad-hoc scripts not tied to a skill
+└── <skill-name>/                ← per-skill scratch area
     ├── draft-prompt.md          ← in-progress draft
     ├── test-input.csv           ← test data
     └── notes.md                 ← experiment notes
@@ -204,10 +233,12 @@ sessions/                        ← USER files (per-session, not developer)
 | Location | Who owns it | Lives with the skill? | Shared across skills? |
 |----------|------------|----------------------|----------------------|
 | `skills/<name>/` | Developer | Yes — shipped | No — isolated per skill |
-| `workspace/<name>/` | Developer | No — scratch only | No — isolated per skill |
+| `workspace/_root/` | Developer | No — general scratch | Yes — shared default area |
+| `workspace/<name>/` | Developer | No — per-skill scratch | No — isolated per skill |
 | `sessions/<id>/` | User | No | No — isolated per session |
 
 **Rule:** never mix these three locations.
+**Rule:** when no specific skill is being developed or mentioned, always use `workspace/_root/` as the scratch area.
 **Rule:** `workspace/<name>/` must mirror the skill name in `skills/<name>/` so you can work on multiple skills without files crossing over.
 
 ---

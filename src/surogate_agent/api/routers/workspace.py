@@ -41,9 +41,6 @@ def _file_infos(directory) -> list[FileInfo]:
 
 
 def _resolve_skill_dir(ws_root, skill: str):
-    """Map skill name to directory. '_root' is the reserved name for workspace root."""
-    if skill == "_root":
-        return ws_root
     return ws_root / skill
 
 
@@ -53,17 +50,7 @@ def list_workspaces(settings: ServerSettings = Depends(settings_dep)):
     ws_root = settings.workspace_dir
     if not ws_root.is_dir():
         return []
-    results = []
-    # Root-level files first (files sitting directly in the workspace root).
-    root_files = _file_infos(ws_root)
-    if root_files:
-        results.append(WorkspaceResponse(
-            skill="_root",
-            workspace_dir=str(ws_root),
-            files=root_files,
-        ))
-    # Skill sub-directories.
-    results += [
+    results = [
         WorkspaceResponse(
             skill=entry.name,
             workspace_dir=str(entry),
@@ -100,8 +87,6 @@ def get_workspace(skill: str, settings: ServerSettings = Depends(settings_dep)):
 @router.delete("/{skill}")
 def delete_workspace(skill: str, settings: ServerSettings = Depends(settings_dep)):
     log.debug("delete_workspace: %s", skill)
-    if skill == "_root":
-        raise HTTPException(status_code=400, detail="Cannot delete the workspace root")
     ws_dir = _resolve_skill_dir(settings.workspace_dir, skill)
     if not ws_dir.is_dir():
         log.debug("delete_workspace: workspace '%s' not found", skill)
