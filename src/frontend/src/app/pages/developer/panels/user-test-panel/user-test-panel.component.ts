@@ -1,5 +1,7 @@
 import { Component, Output, EventEmitter, ViewChild, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { forkJoin, of } from 'rxjs';
+import { catchError } from 'rxjs/operators';
 import { SessionsService } from '../../../../core/services/sessions.service';
 import { FileInfo } from '../../../../core/models/session.models';
 import { ChatComponent } from '../../../../shared/components/chat/chat.component';
@@ -49,12 +51,21 @@ export class UserTestPanelComponent {
   constructor(private sessionsService: SessionsService) {}
 
   newSession() {
-    const id = uuid();
-    this.sessionId.set(id);
-    this.inputFiles.set([]);
-    this.outputFiles.set([]);
-    this.inputFileNames.clear();
-    this.chatComp?.restoreSession([], id);
+    const oldId = this.sessionId();
+    const newId = uuid();
+
+    // Delete all traces of the old session in parallel; ignore 404s.
+    forkJoin([
+      this.sessionsService.delete(oldId).pipe(catchError(() => of(null))),
+      this.sessionsService.clearHistory(oldId).pipe(catchError(() => of(null))),
+      this.sessionsService.deleteMeta(oldId).pipe(catchError(() => of(null))),
+    ]).subscribe(() => {
+      this.sessionId.set(newId);
+      this.inputFiles.set([]);
+      this.outputFiles.set([]);
+      this.inputFileNames.clear();
+      this.chatComp?.restoreSession([], newId);
+    });
   }
 
   onFilesChanged(_files: string[]) {
@@ -68,13 +79,14 @@ export class UserTestPanelComponent {
 
   onSessionCreated(id: string) {
     this.sessionId.set(id);
-    this.refreshInputFiles();
+    this.inputFiles.set([]);
+    this.inputFileNames.clear();
   }
 
   refreshInputFiles() {
     this.sessionsService.listFiles(this.sessionId()).subscribe(f => {
-      this.inputFiles.set(f);
-      this.inputFileNames = new Set(f.map(file => file.name));
+      // Only show files the user explicitly uploaded — never reclassify output files as inputs.
+      this.inputFiles.set(f.filter(file => this.inputFileNames.has(file.name)));
     });
   }
 

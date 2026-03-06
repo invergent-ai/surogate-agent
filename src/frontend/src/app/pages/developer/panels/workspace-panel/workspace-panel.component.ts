@@ -36,7 +36,8 @@ export class WorkspacePanelComponent implements OnInit {
         this.localFolder.set('');
         untracked(() => this.loadFiles());
       } else {
-        this.files.set([]);
+        this.localFolder.set('_root');
+        untracked(() => this.loadFiles());
       }
     });
   }
@@ -47,11 +48,7 @@ export class WorkspacePanelComponent implements OnInit {
   }
 
   ngOnInit() {
-    // Always default to _root; populate autocomplete from existing workspace folders.
-    if (!this.skill() && !this.localFolder()) {
-      this.localFolder.set('_root');
-      this.loadFiles();
-    }
+    // Populate autocomplete suggestions from existing workspace folders.
     this.workspaceService.list().subscribe({
       next: ws => this.existingFolders.set(ws.map(w => w.skill)),
       error: () => {},

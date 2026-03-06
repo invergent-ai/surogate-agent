@@ -63,6 +63,8 @@ export class SkillsBrowserComponent implements OnInit {
   ngOnInit() { this.loadSkills(); }
 
   loadSkills() {
+    this.deselect();
+    this.detailClosed.emit();
     this.skillsService.list('developer').subscribe(list => {
       this.skills.set(list);
       this.skillsLoaded.emit(list.map(s => s.name));
