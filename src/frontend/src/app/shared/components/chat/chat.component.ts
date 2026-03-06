@@ -49,6 +49,8 @@ export class ChatComponent implements OnChanges, OnDestroy {
   @Output() hasMessages       = new EventEmitter<boolean>();
   /** Emitted after each streaming turn completes with the full message list (timestamps serialized to ISO strings). */
   @Output() messagesSnapshot  = new EventEmitter<unknown[]>();
+  /** Emitted when the agent finishes a response turn (complete, error, or stop). */
+  @Output() responseDone      = new EventEmitter<void>();
 
   messages = signal<ChatMessage[]>([]);
   streaming = signal(false);
@@ -221,6 +223,7 @@ export class ChatComponent implements OnChanges, OnDestroy {
         this.finalizeAssistant(assistantId, [{ type: 'error', text: String(err?.message ?? err) }]);
         this.skillActivities.update(list => list.map(s => ({ ...s, finished: true, endTime: s.endTime ?? Date.now() })));
         this.streaming.set(false);
+        this.responseDone.emit();
       },
       complete: () => {
         this._currentAssistantId = '';
@@ -248,6 +251,7 @@ export class ChatComponent implements OnChanges, OnDestroy {
       timestamp: m.timestamp instanceof Date ? m.timestamp.toISOString() : m.timestamp,
     }));
     if (snapshot.length > 0) this.messagesSnapshot.emit(snapshot);
+    this.responseDone.emit();
   }
 
   private handleEvent(ev: SseEvent, assistantId: string) {

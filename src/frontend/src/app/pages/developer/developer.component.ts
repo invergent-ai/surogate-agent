@@ -49,6 +49,7 @@ export class DeveloperComponent {
   @ViewChild(SkillTabsComponent) skillTabs!: SkillTabsComponent;
   @ViewChild(SkillsBrowserComponent) skillsBrowser!: SkillsBrowserComponent;
   @ViewChild(ChatComponent) devChat!: ChatComponent;
+  @ViewChild(WorkspacePanelComponent) workspacePanel!: WorkspacePanelComponent;
 
   readonly DESKTOP_SNAPS       = DESKTOP_SNAPS;
   readonly DESKTOP_SNAPS_RIGHT = DESKTOP_SNAPS_RIGHT;
@@ -194,6 +195,10 @@ export class DeveloperComponent {
 
   onSkillHistoryCleared() {
     if (this.devChat) this.devChat.clearMessages();
+  }
+
+  onAgentResponseDone() {
+    if (this.workspacePanel) this.workspacePanel.refresh();
   }
 
   expandLeftPanel() {
