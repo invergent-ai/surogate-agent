@@ -1,20 +1,39 @@
-<div class="flex w-full mb-4" [class.justify-end]="message.role === 'user'">
-  <div
-    class="max-w-[85%] rounded-2xl px-4 py-2.5 select-text"
-    [ngClass]="message.role === 'user'
-      ? ['bg-brand', 'text-zinc-900', 'rounded-br-sm']
-      : ['bg-gray-100', 'dark:bg-zinc-800', 'text-gray-800', 'dark:text-zinc-100', 'rounded-bl-sm']"
-  >
+@if (message.role === 'user') {
+  <!-- User message: compact right-aligned bubble -->
+  <div class="flex justify-end mb-4">
+    <div class="max-w-[80%] rounded-2xl rounded-br-sm px-4 py-2.5 bg-brand text-zinc-900 select-text">
+      @for (block of message.blocks; track $index) {
+        @if (isText(block)) {
+          <p class="text-sm leading-relaxed whitespace-pre-wrap">{{ block.text }}</p>
+        } @else if (isError(block)) {
+          <p class="text-sm text-red-700">⚠ {{ block.text }}</p>
+        }
+      }
+    </div>
+  </div>
+} @else {
+  <!-- Assistant message: full-width, no bubble, rendered markdown -->
+  <div class="mb-5 w-full">
     @for (block of message.blocks; track $index) {
       @if (isText(block)) {
-        <p class="text-sm leading-relaxed whitespace-pre-wrap">{{ block.text }}</p>
+        <app-markdown-content
+          [text]="block.text"
+          [finalized]="message.finalized">
+        </app-markdown-content>
       } @else if (isError(block)) {
-        <p class="text-sm text-red-500 dark:text-red-400">⚠ {{ block.text }}</p>
+        <div class="flex items-start gap-2 px-3 py-2 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 text-red-600 dark:text-red-400 text-sm my-2">
+          <svg class="mt-0.5 shrink-0" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          <span>{{ block.text }}</span>
+        </div>
       }
     }
-
-    @if (!message.finalized && message.role === 'assistant') {
-      <span class="inline-block w-2 h-4 bg-current animate-pulse ml-0.5 align-middle rounded-sm"></span>
+    @if (!message.finalized && message.blocks.length === 0) {
+      <!-- Empty assistant bubble during loading -->
+      <div class="flex items-center gap-1.5 py-1 text-gray-400 dark:text-zinc-500">
+        <span class="inline-block w-1.5 h-1.5 rounded-full bg-current animate-bounce" style="animation-delay:0ms"></span>
+        <span class="inline-block w-1.5 h-1.5 rounded-full bg-current animate-bounce" style="animation-delay:150ms"></span>
+        <span class="inline-block w-1.5 h-1.5 rounded-full bg-current animate-bounce" style="animation-delay:300ms"></span>
+      </div>
     }
   </div>
-</div>
+}

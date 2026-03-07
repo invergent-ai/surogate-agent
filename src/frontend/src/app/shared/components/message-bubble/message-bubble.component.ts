@@ -1,11 +1,12 @@
 import { Component, Input } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ChatMessage, MessageBlock, TextBlock, ErrorBlock } from '../../../core/models/chat.models';
+import { MarkdownContentComponent } from '../markdown-content/markdown-content.component';
 
 @Component({
   selector: 'app-message-bubble',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, MarkdownContentComponent],
   templateUrl: './message-bubble.component.html',
 })
 export class MessageBubbleComponent {

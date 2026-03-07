@@ -1,0 +1,40 @@
+<div class="md-message">
+  @if (!finalized) {
+    <!-- Streaming: plain text with blinking cursor -->
+    <p class="text-sm leading-relaxed whitespace-pre-wrap message-content">{{ text }}<span class="inline-block w-2 h-4 bg-current animate-pulse ml-0.5 align-middle rounded-sm"></span></p>
+  } @else if (rawMode()) {
+    <!-- Raw markdown source -->
+    <pre class="md-raw message-content">{{ text }}</pre>
+  } @else {
+    <!-- Rendered markdown -->
+    <div class="md-body message-content"
+         [innerHTML]="safeHtml()"
+         (click)="handleClick($event)">
+    </div>
+  }
+
+  <!-- Toolbar — visible only once finalized -->
+  @if (finalized) {
+    <div class="md-toolbar">
+      <button class="md-toolbar-btn" (click)="toggleRaw()" [title]="rawMode() ? 'Show rendered markdown' : 'Show raw markdown'">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>
+        </svg>
+        {{ rawMode() ? 'Rendered' : 'Raw' }}
+      </button>
+      <button class="md-toolbar-btn" (click)="copyAll()" [title]="'Copy message text'">
+        @if (copyFeedback()) {
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          <span style="color:#22c55e">Copied!</span>
+        } @else {
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          Copy
+        }
+      </button>
+      <button class="md-toolbar-btn" (click)="downloadMd()" title="Download as .md file">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Download
+      </button>
+    </div>
+  }
+</div>
