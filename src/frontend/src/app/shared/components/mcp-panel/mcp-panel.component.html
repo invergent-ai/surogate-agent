@@ -5,23 +5,72 @@
     <p class="text-xs text-gray-500 dark:text-zinc-400">
       Registered servers start automatically and are injected into developer sessions.
     </p>
-    <button
-      type="button"
-      (click)="load()"
-      [disabled]="loading()"
-      class="flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-zinc-700 text-gray-600 dark:text-zinc-400 hover:bg-gray-50 dark:hover:bg-zinc-800 disabled:opacity-40 transition-colors"
-      title="Refresh"
-    >
-      <svg class="w-3.5 h-3.5" [class.animate-spin]="loading()" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-      </svg>
-      Refresh
-    </button>
+    <div class="flex items-center gap-2">
+      <button
+        type="button"
+        (click)="openAddForm()"
+        [disabled]="showAddForm()"
+        class="flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded-lg border border-brand/60 text-brand hover:bg-amber-50 dark:hover:bg-amber-950/30 disabled:opacity-40 transition-colors"
+        title="Add MCP server by URL"
+      >
+        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
+        </svg>
+        Add
+      </button>
+      <button
+        type="button"
+        (click)="load()"
+        [disabled]="loading()"
+        class="flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-zinc-700 text-gray-600 dark:text-zinc-400 hover:bg-gray-50 dark:hover:bg-zinc-800 disabled:opacity-40 transition-colors"
+        title="Refresh"
+      >
+        <svg class="w-3.5 h-3.5" [class.animate-spin]="loading()" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+        </svg>
+        Refresh
+      </button>
+    </div>
   </div>
+
+  <!-- Add HTTP server form -->
+  @if (showAddForm()) {
+    <div class="rounded-xl border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800/60 px-4 py-3 flex flex-col gap-3">
+      <p class="text-xs font-medium text-gray-700 dark:text-zinc-300">Add MCP Server by URL</p>
+      <p class="text-xs text-gray-400 dark:text-zinc-500">Transport is auto-detected (SSE or Streamable HTTP).</p>
+      <div class="flex flex-col gap-2">
+        <input
+          type="text"
+          placeholder="Name (e.g. deepwiki)"
+          [ngModel]="addName()"
+          (ngModelChange)="addName.set($event)"
+          class="w-full px-2.5 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-zinc-600 bg-transparent text-gray-900 dark:text-zinc-100 placeholder-gray-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-brand/50"
+        />
+        <input
+          type="url"
+          placeholder="URL (e.g. https://mcp.example.com/mcp)"
+          [ngModel]="addUrl()"
+          (ngModelChange)="addUrl.set($event)"
+          class="w-full px-2.5 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-zinc-600 bg-transparent text-gray-900 dark:text-zinc-100 placeholder-gray-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-brand/50"
+        />
+      </div>
+      @if (addError()) {
+        <p class="text-xs text-red-600 dark:text-red-400">{{ addError() }}</p>
+      }
+      <div class="flex gap-2 justify-end">
+        <button type="button" (click)="cancelAdd()" [disabled]="adding()" class="px-2.5 py-1 text-xs rounded-lg border border-gray-200 dark:border-zinc-700 text-gray-600 dark:text-zinc-400 hover:bg-gray-100 dark:hover:bg-zinc-700 disabled:opacity-40 transition-colors">
+          Cancel
+        </button>
+        <button type="button" (click)="addServer()" [disabled]="adding()" class="px-2.5 py-1 text-xs rounded-lg bg-brand text-white font-medium hover:bg-amber-400 disabled:opacity-40 transition-colors">
+          @if (adding()) { Adding… } @else { Add }
+        </button>
+      </div>
+    </div>
+  }
 
   <!-- Register hint -->
   <div class="px-3 py-2.5 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 text-xs text-amber-800 dark:text-amber-300">
-    Register new servers by chatting with the developer agent using the
+    Register stdio/SSE servers by chatting with the developer agent using the
     <span class="font-mono font-semibold">mcp-manager</span> skill.
   </div>
 
@@ -89,8 +138,8 @@
               stopped
             </span>
           }
-          <!-- Start/Stop button — SSE servers only (stdio are spawned on demand) -->
-          @if (server.transport === 'sse') {
+          <!-- Start/Stop button — local SSE servers only (remote and stdio need no daemon) -->
+          @if (server.transport === 'sse' && !server.repo_url) {
             @if (server.status === 'running') {
               <button
                 type="button"
@@ -126,30 +175,41 @@
       <!-- Repo + transport/port -->
       <div class="flex items-center gap-3 text-xs text-gray-500 dark:text-zinc-400">
         @if (server.repo_url) {
-          <span class="truncate max-w-[200px]" [title]="server.repo_url">{{ server.repo_url }}</span>
+          <span class="truncate max-w-[240px]" [title]="server.repo_url">{{ server.repo_url }}</span>
           <span class="text-gray-300 dark:text-zinc-600">·</span>
+          <span class="font-mono uppercase">{{ server.transport }}</span>
+        } @else {
+          <span class="font-mono uppercase">{{ server.transport }}</span>
+          <span class="text-gray-300 dark:text-zinc-600">·</span>
+          <span class="font-mono">:{{ server.port }}</span>
         }
-        <span class="font-mono uppercase">{{ server.transport }}</span>
-        <span class="text-gray-300 dark:text-zinc-600">·</span>
-        <span class="font-mono">:{{ server.port }}</span>
       </div>
 
       <!-- Tools summary (expandable) -->
       <div class="text-xs text-gray-400 dark:text-zinc-500">
         <span class="font-medium text-gray-600 dark:text-zinc-300">Tools: </span>
-        <span>{{ toolNames(server, isExpanded(server.name)) }}</span>
-        @if (!isExpanded(server.name) && extraCount(server) > 0) {
-          <button
-            type="button"
-            (click)="toggleTools(server.name)"
-            class="ml-1 text-brand hover:underline font-medium focus:outline-none"
-          >(+{{ extraCount(server) }} more)</button>
-        } @else if (isExpanded(server.name) && extraCount(server) > 0) {
-          <button
-            type="button"
-            (click)="toggleTools(server.name)"
-            class="ml-1 text-brand hover:underline font-medium focus:outline-none"
-          >(show less)</button>
+        @if (!server.tools || server.tools.length === 0) {
+          <span>No tools</span>
+        } @else {
+          @for (tool of (isExpanded(server.name) ? server.tools : server.tools.slice(0, 3)); track tool.name) {
+            <span
+              [title]="tool.description"
+              class="cursor-default hover:text-brand transition-colors"
+            >{{ tool.name }}@if (!$last) {<span class="select-none">, </span>}</span>
+          }
+          @if (!isExpanded(server.name) && extraCount(server) > 0) {
+            <button
+              type="button"
+              (click)="toggleTools(server.name)"
+              class="ml-1 text-brand hover:underline font-medium focus:outline-none"
+            >(+{{ extraCount(server) }} more)</button>
+          } @else if (isExpanded(server.name) && extraCount(server) > 0) {
+            <button
+              type="button"
+              (click)="toggleTools(server.name)"
+              class="ml-1 text-brand hover:underline font-medium focus:outline-none"
+            >(show less)</button>
+          }
         }
       </div>
     </div>

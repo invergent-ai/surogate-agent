@@ -68,35 +68,58 @@ def get_server(
 
 
 @router.post("", response_model=McpServerResponse, status_code=201)
-def add_server(
+async def add_server(
     body: McpServerCreate,
     settings: ServerSettings = Depends(settings_dep),
     _user: User = Depends(_require_developer),
 ) -> McpServerResponse:
-    registry = MCPRegistry(settings.mcp_scripts_dir)
+    from surogate_agent.mcp.lifecycle import probe_url
+
+    transport = body.transport
+    probed_tools: list = []
+
+    # When a remote URL is provided, detect transport and fetch tools in one shot.
+    if body.repo_url:
+        try:
+            transport, lc_tools = await probe_url(body.repo_url, name=body.name)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        probed_tools = [
+            {"name": t.name, "description": getattr(t, "description", "") or ""}
+            for t in lc_tools
+        ]
+        log.info("probed %r: transport=%s, tools=%d", body.name, transport, len(probed_tools))
+
     entry = McpServerEntry(
         name=body.name,
         repo_url=body.repo_url,
         start_command=body.start_command,
         cwd=body.cwd,
-        transport=body.transport,
+        transport=transport,
         host=body.host,
         port=body.port,
-        tools=[{"name": t.name, "description": t.description} for t in body.tools],
+        tools=probed_tools or [{"name": t.name, "description": t.description} for t in body.tools],
     )
-    registry.add(entry)
-    log.info("registered MCP server %r", entry.name)
 
-    # Attempt to auto-start SSE servers (stdio are spawned on demand — no daemon needed)
     lifecycle = MCPLifecycle(settings.mcp_scripts_dir)
-    if entry.transport == "sse":
+
+    registry = MCPRegistry(settings.mcp_scripts_dir)
+    registry.add(entry)
+    log.info("registered MCP server %r (transport=%s)", entry.name, entry.transport)
+
+    # Only attempt to start local SSE daemon servers (remote ones are already running).
+    if entry.transport == "sse" and not entry.repo_url:
         try:
             if lifecycle.get_status(entry) != "running":
                 lifecycle.start_server(entry)
         except Exception as exc:
             log.warning("could not start MCP server %r after registration: %s", entry.name, exc)
 
-    status = lifecycle.wait_for_running(entry) if entry.transport == "sse" else lifecycle.get_status(entry)
+    if entry.transport == "sse" and not entry.repo_url:
+        status = lifecycle.wait_for_running(entry)
+    else:
+        status = lifecycle.get_status(entry)
+
     return _to_response(entry, status)
 
 
@@ -112,8 +135,8 @@ def start_server(
         raise HTTPException(status_code=404, detail=f"MCP server '{name}' not found")
     lifecycle = MCPLifecycle(settings.mcp_scripts_dir)
 
-    # stdio servers are spawned on demand — no persistent daemon to start
-    if entry.transport != "sse":
+    # Remote servers (repo_url set) and non-SSE servers have no local daemon to manage.
+    if entry.transport != "sse" or entry.repo_url:
         return _to_response(entry, lifecycle.get_status(entry))
 
     if lifecycle.get_status(entry) == "running":

@@ -31,4 +31,17 @@ export class McpService {
   stop(name: string): Observable<McpServer> {
     return this.http.post<McpServer>(this.url(`/${name}/stop`), {});
   }
+
+  register(name: string, serverUrl: string): Observable<McpServer> {
+    const parsed = new URL(serverUrl);
+    const host = parsed.hostname;
+    const port = parseInt(parsed.port) || (parsed.protocol === 'https:' ? 443 : 80);
+    // Backend auto-detects transport (sse vs streamable_http) by probing repo_url.
+    return this.http.post<McpServer>(this.url(), {
+      name,
+      host,
+      port,
+      repo_url: serverUrl,
+    });
+  }
 }

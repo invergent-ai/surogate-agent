@@ -44,7 +44,8 @@
       "Bash(uv python list)",
       "Bash(/work/Product/Surogate/agent/.venv/bin/python3:*)",
       "Bash(/work/Product/Surogate/agent/.venv/bin/pip install:*)",
-      "Bash(.venv/bin/python3:*)"
+      "Bash(.venv/bin/python3:*)",
+      "Bash(pip:*)"
     ]
   }
 }

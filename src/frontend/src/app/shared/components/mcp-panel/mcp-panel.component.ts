@@ -1,12 +1,13 @@
 import { Component, inject, signal, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { McpService } from '../../../core/services/mcp.service';
 import { McpServer } from '../../../core/models/mcp.models';
 
 @Component({
   selector: 'app-mcp-panel',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, FormsModule],
   templateUrl: './mcp-panel.component.html',
 })
 export class McpPanelComponent implements OnInit {
@@ -21,6 +22,13 @@ export class McpPanelComponent implements OnInit {
   actionPending = signal<Set<string>>(new Set());
   // Track servers with expanded tools list
   expandedTools = signal<Set<string>>(new Set());
+
+  // Add HTTP server form
+  showAddForm = signal(false);
+  addName = signal('');
+  addUrl = signal('');
+  adding = signal(false);
+  addError = signal('');
 
   ngOnInit(): void {
     this.load();
@@ -53,12 +61,6 @@ export class McpPanelComponent implements OnInit {
     const s = new Set(this.expandedTools());
     s.has(name) ? s.delete(name) : s.add(name);
     this.expandedTools.set(s);
-  }
-
-  toolNames(server: McpServer, expanded: boolean): string {
-    if (!server.tools || server.tools.length === 0) return 'No tools';
-    if (expanded) return server.tools.map(t => t.name).join(', ');
-    return server.tools.slice(0, 3).map(t => t.name).join(', ');
   }
 
   extraCount(server: McpServer): number {
@@ -124,6 +126,40 @@ export class McpPanelComponent implements OnInit {
       error: () => {
         this.removing.set(null);
         this.error.set(`Failed to remove '${name}'.`);
+      },
+    });
+  }
+
+  openAddForm(): void {
+    this.showAddForm.set(true);
+    this.addName.set('');
+    this.addUrl.set('');
+    this.addError.set('');
+  }
+
+  cancelAdd(): void {
+    this.showAddForm.set(false);
+    this.addError.set('');
+  }
+
+  addServer(): void {
+    const name = this.addName().trim();
+    const url = this.addUrl().trim();
+    if (!name) { this.addError.set('Name is required.'); return; }
+    if (!url) { this.addError.set('URL is required.'); return; }
+    try { new URL(url); } catch { this.addError.set('Invalid URL.'); return; }
+    this.adding.set(true);
+    this.addError.set('');
+    this.mcpService.register(name, url).subscribe({
+      next: (server) => {
+        this.adding.set(false);
+        this.showAddForm.set(false);
+        this.servers.set([...this.servers(), server]);
+      },
+      error: (err) => {
+        this.adding.set(false);
+        const detail = err?.error?.detail ?? 'Failed to register server.';
+        this.addError.set(detail);
       },
     });
   }

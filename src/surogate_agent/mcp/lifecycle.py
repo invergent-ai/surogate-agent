@@ -20,6 +20,77 @@ log = get_logger(__name__)
 _PROCESSES: dict[str, subprocess.Popen] = {}
 
 
+def _unwrap_exc(exc: BaseException | None) -> str:
+    """Return a human-readable string from a possibly-wrapped exception.
+
+    ExceptionGroup (raised by anyio TaskGroup) buries the real error one level
+    deep.  Unwrap recursively to find the first leaf message.
+    """
+    if exc is None:
+        return "unknown error"
+    if isinstance(exc, BaseExceptionGroup) and exc.exceptions:
+        return _unwrap_exc(exc.exceptions[0])
+    return str(exc)
+
+
+async def probe_url(url: str, name: str = "probe", timeout: float = 8.0) -> tuple[str, list]:
+    """Auto-detect MCP transport for a URL by sequentially probing each transport.
+
+    Always probes streamable HTTP first, then SSE — regardless of URL shape.
+
+    SSE gets a 2× timeout budget because it requires two round-trips (GET to
+    establish the event stream, then POST initialize + list_tools over that
+    stream).  When the HTTP probe opens a streaming connection that doesn't
+    cleanly close, a 1 s drain gives the event loop time to flush close
+    handlers before the SSE probe starts.
+
+    Returns ``(transport, tools)`` — transport is ``'http'`` or ``'sse'``,
+    tools is the list of patched LangChain tool objects.
+    """
+    import asyncio
+
+    # (transport_key, langchain_transport, per-probe timeout)
+    probes = [
+        ("http", "streamable_http", timeout),
+        ("sse", "sse", timeout * 2),
+    ]
+
+    last_error: Exception | None = None
+
+    for i, (transport_key, lc_transport, probe_timeout) in enumerate(probes):
+        if i > 0:
+            # Give the event loop time to flush close-handlers from any
+            # streaming connection opened by the previous probe (SSE or
+            # chunked HTTP).  0.2 s is too tight when the server keeps the
+            # stream open until the client drops it.
+            await asyncio.sleep(1.0)
+        try:
+            from langchain_mcp_adapters.client import MultiServerMCPClient
+            client = MultiServerMCPClient({name: {"url": url, "transport": lc_transport}})
+            tools = await asyncio.wait_for(client.get_tools(), timeout=probe_timeout)
+            for t in tools:
+                _patch_mcp_tool(t)
+            if tools:
+                log.info("probe_url: %r → %s (%d tool(s))", url, transport_key, len(tools))
+                return transport_key, tools
+            # 0 tools is treated as a failed probe — the endpoint is reachable
+            # but not speaking the expected MCP protocol (e.g. streamable HTTP
+            # hitting a plain SSE endpoint).  Keep trying the next transport.
+            log.debug("probe_url: %r %s returned 0 tools — treating as failure", url, transport_key)
+            last_error = RuntimeError(f"{transport_key}: connected but returned 0 tools")
+        except asyncio.TimeoutError as exc:
+            log.debug("probe_url: %r %s timed out after %.1fs", url, transport_key, probe_timeout)
+            last_error = exc
+        except Exception as exc:
+            log.debug("probe_url: %r %s failed: %s", url, transport_key, _unwrap_exc(exc))
+            last_error = exc
+
+    cause = _unwrap_exc(last_error) if last_error else "all transports failed"
+    msg = f"Could not retrieve tools from {url!r}: {cause}"
+    log.warning("probe_url: %s", msg)
+    raise RuntimeError(msg) from last_error
+
+
 def _patch_mcp_tool(tool) -> None:
     """Patch an MCP tool in-place to strip None kwargs before sending to the MCP server.
 
@@ -52,9 +123,9 @@ class MCPLifecycle:
         - stdio servers: 'available' if the start script exists, 'stopped' otherwise.
           (stdio has no persistent daemon to ping.)
         """
-        if entry.transport == "sse":
+        if entry.transport in ("sse", "http"):
             status = self._ping_http(entry)
-            log.debug("MCPLifecycle.get_status: SSE server %r → %s", entry.name, status)
+            log.debug("MCPLifecycle.get_status: %s server %r → %s", entry.transport, entry.name, status)
             return status
         # stdio — no persistent daemon; report available when start script exists
         script_path = self._mcp_dir / entry.name / "start.sh"
@@ -67,19 +138,32 @@ class MCPLifecycle:
 
     def _ping_http(self, entry: "McpServerEntry") -> str:
         import urllib.request
-        for path in ("/sse", "/"):
-            try:
-                url = f"http://{entry.host}:{entry.port}{path}"
-                log.debug("MCPLifecycle._ping_http: GET %s", url)
-                with urllib.request.urlopen(
-                    urllib.request.Request(url, method="GET"), timeout=1
-                ):
-                    pass
-                log.debug("MCPLifecycle._ping_http: %s responded → running", url)
-                return "running"
-            except Exception as exc:
-                log.debug("MCPLifecycle._ping_http: %s unreachable: %s", url, exc)
-        return "stopped"
+        import urllib.error
+
+        # Use repo_url as the canonical URL when available (exact URL, no path mangling).
+        # Fall back to constructing from host/port with the correct scheme.
+        if entry.repo_url:
+            url = entry.repo_url
+        else:
+            scheme = "https" if entry.port == 443 else "http"
+            port_suffix = f":{entry.port}" if entry.port not in (80, 443) else ""
+            url = f"{scheme}://{entry.host}{port_suffix}"
+
+        try:
+            log.debug("MCPLifecycle._ping_http: GET %s", url)
+            with urllib.request.urlopen(
+                urllib.request.Request(url, method="GET"), timeout=2
+            ):
+                pass
+            log.debug("MCPLifecycle._ping_http: %s responded → running", url)
+            return "running"
+        except urllib.error.HTTPError:
+            # Any HTTP error (405, 404, …) still means the server is reachable.
+            log.debug("MCPLifecycle._ping_http: %s HTTP error → running", url)
+            return "running"
+        except Exception as exc:
+            log.debug("MCPLifecycle._ping_http: %s unreachable: %s", url, exc)
+            return "stopped"
 
     def start_server(self, entry: "McpServerEntry") -> subprocess.Popen:
         """Start an SSE server process and track it.
@@ -88,7 +172,7 @@ class MCPLifecycle:
         Raises ValueError for stdio transport.
         """
         if entry.transport != "sse":
-            raise ValueError(f"start_server is only for SSE servers; '{entry.name}' is stdio")
+            raise ValueError(f"start_server is only for SSE servers; '{entry.name}' is {entry.transport}")
 
         script_path = self._mcp_dir / entry.name / "start.sh"
         cwd = entry.cwd or str(self._mcp_dir / entry.name)
@@ -125,12 +209,16 @@ class MCPLifecycle:
         return final
 
     def start_all(self, registry: "MCPRegistry") -> None:
-        """Start all registered SSE servers that aren't already running.
-        stdio servers are not started as daemons — they are spawned on demand.
+        """Start all registered local SSE servers that aren't already running.
+
+        Remote servers (those with a repo_url set) and stdio servers are not
+        started as daemons — remote ones are already running externally, and
+        stdio ones are spawned on demand.
         """
         all_entries = registry.list()
-        sse_entries = [e for e in all_entries if e.transport == "sse"]
-        log.info("MCPLifecycle.start_all: %d total server(s), %d SSE", len(all_entries), len(sse_entries))
+        # Only local SSE servers need a daemon; remote ones (repo_url set) are external.
+        sse_entries = [e for e in all_entries if e.transport == "sse" and not e.repo_url]
+        log.info("MCPLifecycle.start_all: %d total server(s), %d local SSE", len(all_entries), len(sse_entries))
         for entry in sse_entries:
             status = self.get_status(entry)
             if status == "running":
@@ -169,8 +257,13 @@ class MCPLifecycle:
             from langchain_mcp_adapters.client import MultiServerMCPClient
 
             if entry.transport == "sse":
-                url = f"http://{entry.host}:{entry.port}/sse"
+                # For remote SSE servers use repo_url directly; for local ones construct from host:port.
+                url = entry.repo_url if entry.repo_url else f"http://{entry.host}:{entry.port}/sse"
                 server_config = {entry.name: {"url": url, "transport": "sse"}}
+            elif entry.transport == "http":
+                # Streamable HTTP transport — use repo_url if set, else construct from host:port.
+                base_url = entry.repo_url if entry.repo_url else f"http://{entry.host}:{entry.port}"
+                server_config = {entry.name: {"url": base_url, "transport": "streamable_http"}}
             else:
                 # stdio — spawn via start.sh
                 script_path = self._mcp_dir / entry.name / "start.sh"
