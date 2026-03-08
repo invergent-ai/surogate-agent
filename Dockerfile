@@ -64,13 +64,15 @@ ENV PATH="/app/.venv/bin:$PATH"
 ENV SUROGATE_SKILLS_DIR=/data/skills \
     SUROGATE_SESSIONS_DIR=/data/sessions \
     SUROGATE_WORKSPACE_DIR=/data/workspace \
+    SUROGATE_MCP_WORKSPACE_DIR=/data/mcp-workspace \
+    SUROGATE_MCP_DIR=/data/mcp_scripts \
     SUROGATE_MODEL=claude-sonnet-4-6 \
     SUROGATE_STATIC_DIR=/app/static \
     SUROGATE_DATABASE_URL=sqlite:////data/surogate.db \
     SUROGATE_CHECKPOINTER_DB=/data/checkpoints.db
 
 # Create data directories
-RUN mkdir -p /data/skills /data/sessions /data/workspace
+RUN mkdir -p /data/skills /data/sessions /data/workspace /data/mcp-workspace /data/mcp_scripts
 
 EXPOSE 8000
 
