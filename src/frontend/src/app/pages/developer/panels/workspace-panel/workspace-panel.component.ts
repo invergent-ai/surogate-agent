@@ -99,6 +99,7 @@ export class WorkspacePanelComponent implements OnInit {
   refresh() { this.loadFiles(); }
 
   download  = (name: string)                  => this.workspaceService.downloadFile(this.effectiveFolder(), name);
+  preview   = (name: string)                  => this.workspaceService.previewFile(this.effectiveFolder(), name);
   upload    = (file: File)                    => this.workspaceService.uploadFile(this.effectiveFolder(), file);
   delete    = (name: string)                  => this.workspaceService.deleteFile(this.effectiveFolder(), name);
   readFile  = (name: string)                  => this.workspaceService.readFile(this.effectiveFolder(), name);

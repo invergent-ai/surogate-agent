@@ -33,7 +33,7 @@ def _import_deepagents():
         return create_deep_agent
     except ImportError as exc:
         raise ImportError(
-            "deepagents is required: pip install 'surogate-agent[anthropic]'"
+            "deepagents is required: pip install surogate-agent"
         ) from exc
 
 
@@ -75,7 +75,7 @@ def _build_llm(model: str, api_key: str = "", openrouter_provider: dict | None =
             return ChatAnthropic(model=model, api_key=resolved_key)
         except ImportError:
             raise ImportError(
-                "Install langchain-anthropic: pip install 'surogate-agent[anthropic]'"
+                "Install langchain-anthropic: pip install surogate-agent"
             )
     if model.startswith("gpt") or model.startswith("o1") or model.startswith("o3"):
         resolved_key = api_key or os.environ.get("OPENAI_API_KEY", "")
@@ -90,7 +90,7 @@ def _build_llm(model: str, api_key: str = "", openrouter_provider: dict | None =
             return ChatOpenAI(model=model, api_key=resolved_key)
         except ImportError:
             raise ImportError(
-                "Install langchain-openai: pip install 'surogate-agent[openai]'"
+                "Install langchain-openai: pip install surogate-agent"
             )
     if "/" in model:
         # OpenRouter: all models are identified as "provider/model-name".
@@ -123,7 +123,7 @@ def _build_llm(model: str, api_key: str = "", openrouter_provider: dict | None =
             return ChatOpenAI(**kwargs)
         except ImportError:
             raise ImportError(
-                "Install langchain-openai: pip install 'surogate-agent[openai]'"
+                "Install langchain-openai: pip install surogate-agent"
             )
     raise ValueError(
         f"Unknown model '{model}'. "

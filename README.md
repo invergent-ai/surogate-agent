@@ -75,11 +75,10 @@ Surogate Agent is the engine behind the conversational skill-development workflo
 ### Install
 
 ```bash
-pip install "surogate-agent[anthropic]"        # Claude models
-pip install "surogate-agent[openai]"           # OpenAI models
-pip install "surogate-agent[api]"              # + FastAPI REST server
-pip install "surogate-agent[api,auth]"         # + JWT authentication + web UI
+pip install surogate-agent
 ```
+
+All capabilities — LLM providers (Anthropic, OpenAI), REST API, JWT auth, and MCP support — are included in the base package. No extras required.
 
 Set your API key:
 
@@ -146,7 +145,7 @@ agent = create_agent(role=Role.USER, config=config)
 ### REST API
 
 ```bash
-pip install "surogate-agent[api,auth]"
+pip install surogate-agent
 surogate-agent serve               # starts on http://127.0.0.1:8000
 ```
 
@@ -449,13 +448,15 @@ config = AgentConfig(
 git clone https://github.com/invergent-ai/surogate-agent
 cd surogate-agent
 
-# Install for development (Python 3.12+ recommended)
-pip install -e ".[dev,anthropic,api,auth]"
-# or with uv:
-uv sync --extra dev --extra anthropic --extra api --extra auth
+# Install all dependencies including dev tools (Python 3.12+ required)
+uv sync --extra dev
+# or with pip:
+pip install -e ".[dev]"
 
 # Run the test suite (no LLM required — all mocked)
 pytest tests/ -v
+# or:
+uv run pytest tests/ -v
 
 # Lint
 ruff check src/ tests/
@@ -463,6 +464,8 @@ ruff check src/ tests/
 # Type check
 mypy src/
 ```
+
+`uv sync` reads `uv.lock` and installs an exact reproducible environment. The `--extra dev` flag adds testing and linting tools (`pytest`, `ruff`, `mypy`). All runtime dependencies — LLM providers, FastAPI, auth, MCP — are included in the default install and require no extra flags.
 
 ---
 

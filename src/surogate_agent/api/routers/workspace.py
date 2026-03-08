@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import shutil
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 
 from surogate_agent.api.deps import ServerSettings, settings_dep
@@ -118,6 +118,8 @@ def list_workspace_files(skill: str, settings: ServerSettings = Depends(settings
 def download_workspace_file(
     skill: str,
     file: str,
+    background_tasks: BackgroundTasks,
+    as_pdf: bool = Query(False, description="Convert doc/docx to PDF before returning"),
     settings: ServerSettings = Depends(settings_dep),
 ):
     ws_dir = _resolve_skill_dir(settings.workspace_dir, skill)
@@ -129,6 +131,17 @@ def download_workspace_file(
             status_code=404,
             detail=f"File '{file}' not found in workspace '{skill}'",
         )
+    if as_pdf:
+        from surogate_agent.api.pdf_convert import convert_to_pdf, is_convertible
+        if not is_convertible(target):
+            raise HTTPException(status_code=400, detail=f"File '{file}' cannot be converted to PDF")
+        try:
+            pdf_path = convert_to_pdf(target)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+        pdf_name = target.stem + ".pdf"
+        background_tasks.add_task(shutil.rmtree, str(pdf_path.parent), True)
+        return FileResponse(str(pdf_path), filename=pdf_name, media_type="application/pdf", background=background_tasks)
     return FileResponse(str(target), filename=file)
 
 

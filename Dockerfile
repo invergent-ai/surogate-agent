@@ -26,11 +26,11 @@ COPY pyproject.toml uv.lock README.md ./
 # Minimal src stub required by hatchling to resolve the package during install
 COPY src/ src/
 
-# Create venv and install all production extras (anthropic + api)
+# Create venv and install all dependencies
 # --frozen  → respect uv.lock exactly
 # --no-dev  → skip dev-only tools (pytest, ruff, mypy)
 # --python  → pin to the same Python the runtime will use
-RUN uv sync --frozen --no-dev --extra anthropic --extra openai --extra api --extra auth --python /usr/bin/python3.12
+RUN uv sync --frozen --no-dev --python /usr/bin/python3.12
 
 
 # ─── Stage 2: runtime image ───────────────────────────────────────────────────
@@ -41,9 +41,11 @@ LABEL org.opencontainers.image.title="surogate-agent" \
       org.opencontainers.image.source="https://github.com/invergent-ai/surogate-agent" \
       org.opencontainers.image.licenses="Apache-2.0"
 
-# Install Python 3.12 runtime (no dev headers needed)
+# Install Python 3.12 runtime and LibreOffice headless (for doc/docx → PDF conversion)
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends python3.12 python3.12-venv \
+    && apt-get install -y --no-install-recommends \
+        python3.12 python3.12-venv \
+        libreoffice-writer libreoffice-calc libreoffice-impress \
     && ln -sf /usr/bin/python3.12 /usr/bin/python3 \
     && ln -sf /usr/bin/python3.12 /usr/bin/python \
     && rm -rf /var/lib/apt/lists/*

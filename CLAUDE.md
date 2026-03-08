@@ -14,14 +14,13 @@ docs/                 CLI and API reference docs
 ## Commands
 
 ```bash
-# Install for development (system Python 3.9 works for tests via --no-deps)
+# Install for development (Python >=3.12 required)
+uv sync --extra dev        # preferred — installs all deps + dev tools from uv.lock
+pip install -e ".[dev]"    # alternative — all deps + testing tools
+
+# Lightweight install for running tests only (system Python 3.9 works via --no-deps)
 pip install -e . --no-deps
 pip install pyyaml pytest pytest-asyncio pytest-mock
-
-# Install with full dependencies (requires Python >=3.12)
-pip install -e ".[anthropic]"   # Claude models
-pip install -e ".[openai]"      # OpenAI models
-pip install -e ".[dev]"         # + testing tools (pytest, ruff, mypy)
 
 # Run all tests (no LLM required — all mocked)
 pytest tests/ -v

@@ -15,8 +15,10 @@ const TEXT_EXTENSIONS = new Set([
 ]);
 
 /** Extensions that can be previewed as a binary blob (image, PDF, Office docs). */
-const IMAGE_EXTENSIONS  = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico', 'avif']);
-const BINARY_EXTENSIONS = new Set([...IMAGE_EXTENSIONS, 'pdf', 'doc', 'docx', 'ppt', 'pptx']);
+const IMAGE_EXTENSIONS   = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico', 'avif']);
+const BINARY_EXTENSIONS  = new Set([...IMAGE_EXTENSIONS, 'pdf', 'doc', 'docx', 'ppt', 'pptx']);
+/** Extensions that require server-side conversion to PDF before preview. */
+const CONVERT_EXTENSIONS = new Set(['doc', 'docx']);
 
 @Component({
   selector: 'app-file-list',
@@ -34,6 +36,8 @@ export class FileListComponent {
   @Input() files: FileInfo[] = [];
 
   @Input() downloadFn?: (name: string) => Observable<Blob>;
+  /** Optional: called instead of downloadFn for doc/docx preview (returns a PDF blob). */
+  @Input() previewFn?:  (name: string) => Observable<Blob>;
   @Input() deleteFn?:  (name: string) => Observable<{ deleted: string }>;
   @Input() uploadFn?:  (file: File) => Observable<unknown>;
   @Input() viewFn?:    (name: string) => Observable<string>;
@@ -59,6 +63,7 @@ export class FileListComponent {
 
   isBinaryViewable(name: string): boolean {
     const ext = name.split('.').pop()?.toLowerCase() ?? '';
+    if (CONVERT_EXTENSIONS.has(ext)) return !!this.previewFn;
     return BINARY_EXTENSIONS.has(ext) && !!this.downloadFn;
   }
 
@@ -115,10 +120,16 @@ export class FileListComponent {
 
   openView(name: string) {
     if (this.isBinaryViewable(name)) {
+      const ext = name.split('.').pop()?.toLowerCase() ?? '';
+      const fetchFn = CONVERT_EXTENSIONS.has(ext) && this.previewFn
+        ? this.previewFn
+        : this.downloadFn!;
       this.loadingView.set(true);
-      this.downloadFn!(name).subscribe({
+      fetchFn(name).subscribe({
         next: blob => {
-          this.openedFile.set({ name, content: '', blob });
+          // doc/docx arrive as PDF blobs — tell viewer to render as PDF
+          const viewName = CONVERT_EXTENSIONS.has(ext) ? name.replace(/\.\w+$/, '.pdf') : name;
+          this.openedFile.set({ name: viewName, content: '', blob });
           this.loadingView.set(false);
           this.fileOpened.emit();
         },

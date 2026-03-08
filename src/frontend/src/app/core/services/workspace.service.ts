@@ -32,6 +32,13 @@ export class WorkspaceService {
     return this.http.get(this.url(`/${skill}/files/${encodeURIComponent(fileName)}`), { responseType: 'blob' });
   }
 
+  previewFile(skill: string, fileName: string): Observable<Blob> {
+    return this.http.get(this.url(`/${skill}/files/${encodeURIComponent(fileName)}`), {
+      responseType: 'blob',
+      params: { as_pdf: 'true' },
+    });
+  }
+
   readFile(skill: string, fileName: string): Observable<string> {
     return this.http.get(this.url(`/${skill}/files/${encodeURIComponent(fileName)}`), { responseType: 'text' });
   }

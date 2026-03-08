@@ -45,7 +45,9 @@
       "Bash(/work/Product/Surogate/agent/.venv/bin/python3:*)",
       "Bash(/work/Product/Surogate/agent/.venv/bin/pip install:*)",
       "Bash(.venv/bin/python3:*)",
-      "Bash(pip:*)"
+      "Bash(pip:*)",
+      "Bash(/home/dan/anaconda3/bin/pip install:*)",
+      "Bash(libreoffice:*)"
     ]
   }
 }

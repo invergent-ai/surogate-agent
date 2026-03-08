@@ -5,9 +5,10 @@ Sessions router — /sessions
 from __future__ import annotations
 
 import json
+import shutil
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session as DBSession
 
@@ -399,6 +400,8 @@ def list_session_files(session_id: str, settings: ServerSettings = Depends(setti
 def download_session_file(
     session_id: str,
     file: str,
+    background_tasks: BackgroundTasks,
+    as_pdf: bool = Query(False, description="Convert doc/docx to PDF before returning"),
     settings: ServerSettings = Depends(settings_dep),
 ):
     sm = _session_manager(settings)
@@ -411,6 +414,17 @@ def download_session_file(
             status_code=404,
             detail=f"File '{file}' not found in session '{session_id}'",
         )
+    if as_pdf:
+        from surogate_agent.api.pdf_convert import convert_to_pdf, is_convertible
+        if not is_convertible(target):
+            raise HTTPException(status_code=400, detail=f"File '{file}' cannot be converted to PDF")
+        try:
+            pdf_path = convert_to_pdf(target)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+        pdf_name = target.stem + ".pdf"
+        background_tasks.add_task(shutil.rmtree, str(pdf_path.parent), True)
+        return FileResponse(str(pdf_path), filename=pdf_name, media_type="application/pdf", background=background_tasks)
     return FileResponse(str(target), filename=file)
 
 

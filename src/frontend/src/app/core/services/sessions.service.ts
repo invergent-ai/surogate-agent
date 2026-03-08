@@ -42,6 +42,13 @@ export class SessionsService {
     return this.http.get(this.url(`/${sessionId}/files/${encodeURIComponent(fileName)}`), { responseType: 'blob' });
   }
 
+  previewFile(sessionId: string, fileName: string): Observable<Blob> {
+    return this.http.get(this.url(`/${sessionId}/files/${encodeURIComponent(fileName)}`), {
+      responseType: 'blob',
+      params: { as_pdf: 'true' },
+    });
+  }
+
   readFile(sessionId: string, fileName: string): Observable<string> {
     return this.http.get(this.url(`/${sessionId}/files/${encodeURIComponent(fileName)}`), { responseType: 'text' });
   }

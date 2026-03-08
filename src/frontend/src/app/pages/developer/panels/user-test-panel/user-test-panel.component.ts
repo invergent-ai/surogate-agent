@@ -97,6 +97,7 @@ export class UserTestPanelComponent {
   }
 
   downloadFile = (name: string)                  => this.sessionsService.downloadFile(this.sessionId(), name);
+  previewFile  = (name: string)                  => this.sessionsService.previewFile(this.sessionId(), name);
   deleteFile   = (name: string)                  => this.sessionsService.deleteFile(this.sessionId(), name);
   readFile     = (name: string)                  => this.sessionsService.readFile(this.sessionId(), name);
   saveFile     = (name: string, content: string) => this.sessionsService.saveTextFile(this.sessionId(), name, content);

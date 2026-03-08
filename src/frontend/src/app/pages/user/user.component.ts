@@ -254,6 +254,7 @@ export class UserComponent implements OnInit, AfterViewInit {
   // ── File operation closures ───────────────────────────────────────────────
 
   downloadFile    = (name: string)                  => this.sessionsService.downloadFile(this.sessionId(), name);
+  previewFile     = (name: string)                  => this.sessionsService.previewFile(this.sessionId(), name);
   uploadFile      = (file: File)                    => this.sessionsService.uploadFile(this.sessionId(), file).pipe(
                       tap(() => this._trackInputFile(file.name)));
   deleteInputFile = (name: string)                  => this.sessionsService.deleteFile(this.sessionId(), name).pipe(

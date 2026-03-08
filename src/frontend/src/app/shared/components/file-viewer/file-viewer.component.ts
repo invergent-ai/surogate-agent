@@ -4,11 +4,11 @@ import {
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { DomSanitizer, SafeHtml, SafeUrl, SafeResourceUrl } from '@angular/platform-browser';
+import { DomSanitizer, SafeUrl, SafeResourceUrl } from '@angular/platform-browser';
 import { FullscreenService } from '../../../core/services/fullscreen.service';
 import { PythonEditorComponent } from '../python-editor/python-editor.component';
 
-type ViewMode = 'text' | 'python' | 'image' | 'pdf' | 'docx' | 'unsupported';
+type ViewMode = 'text' | 'python' | 'image' | 'pdf' | 'unsupported';
 
 const PYTHON_EXTS = new Set(['py', 'pyw']);
 
@@ -34,11 +34,9 @@ export class FileViewerComponent implements OnChanges, OnDestroy {
   dirty         = signal(false);
   fullscreen    = signal(false);
 
-  viewMode    = signal<ViewMode>('text');
-  safeImgUrl  = signal<SafeUrl | null>(null);
-  safePdfUrl  = signal<SafeResourceUrl | null>(null);
-  safeDocHtml = signal<SafeHtml | null>(null);
-  docLoading  = signal(false);
+  viewMode   = signal<ViewMode>('text');
+  safeImgUrl = signal<SafeUrl | null>(null);
+  safePdfUrl = signal<SafeResourceUrl | null>(null);
 
   private _objectUrl = '';
 
@@ -68,26 +66,8 @@ export class FileViewerComponent implements OnChanges, OnDestroy {
       this.viewMode.set('pdf');
       this._objectUrl = URL.createObjectURL(this.blob!);
       this.safePdfUrl.set(this.sanitizer.bypassSecurityTrustResourceUrl(this._objectUrl));
-    } else if (ext === 'docx') {
-      this.viewMode.set('docx');
-      this._renderDocx();
     } else {
       this.viewMode.set('unsupported');
-    }
-  }
-
-  private async _renderDocx() {
-    this.docLoading.set(true);
-    this.safeDocHtml.set(null);
-    try {
-      const mammoth    = await import('mammoth');
-      const arrayBuffer = await this.blob!.arrayBuffer();
-      const result     = await mammoth.convertToHtml({ arrayBuffer });
-      this.safeDocHtml.set(this.sanitizer.bypassSecurityTrustHtml(result.value));
-    } catch {
-      this.safeDocHtml.set(null);
-    } finally {
-      this.docLoading.set(false);
     }
   }
 
