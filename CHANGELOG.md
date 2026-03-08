@@ -1,5 +1,38 @@
 # Changelog
 
+## [2.0.0](https://github.com/invergent-ai/surogate-agent/compare/v1.3.1...v2.0.0) (2026-03-08)
+
+
+### ⚠ BREAKING CHANGES
+
+* MCP support
+
+### Features
+
+* export/import mcp servers ([badc12e](https://github.com/invergent-ai/surogate-agent/commit/badc12e826534ca181e37bf342a449d143ecc51b))
+* Export/Import skills ([2292d2a](https://github.com/invergent-ai/surogate-agent/commit/2292d2ac2239c19a8a72b275543a5de2fd504a80))
+* HTTP transport mcp servers ([7f1c6ce](https://github.com/invergent-ai/surogate-agent/commit/7f1c6ce6f50fecebdd1eae34702de8ff63bf37b9))
+* markdown support for chat component ([2860f6c](https://github.com/invergent-ai/surogate-agent/commit/2860f6ce2f72730d61d7b4cffbf514e682c5a23f))
+* MCP support ([2af7a5c](https://github.com/invergent-ai/surogate-agent/commit/2af7a5c6cab097adafa06e85725ef6cb46b6c08a))
+* persistent stdio sessions ([1e14b5f](https://github.com/invergent-ai/surogate-agent/commit/1e14b5fe47a5f61941d61f73bd04d9bec96909e2))
+* Skill activity panel ([7839719](https://github.com/invergent-ai/surogate-agent/commit/78397196e9d513ba9a2c103734629800ee39d387))
+
+
+### Bug Fixes
+
+* added mcp workdirs to dockerfile ([af8e59b](https://github.com/invergent-ai/surogate-agent/commit/af8e59b31ccf16fb1f264ab86b18e8e354e66b6f))
+* Auto refresh workspace files on agent response ([e7efa78](https://github.com/invergent-ai/surogate-agent/commit/e7efa7838f1d88e64a9959fb6b1766abf9342eae))
+* avoid bad frontmatter role and allowed-tools edits ([64f3874](https://github.com/invergent-ai/surogate-agent/commit/64f38740a6369acb4458a8a64c2aeed51172ec7c))
+* ensure users can't alter skill.md files ([72a507c](https://github.com/invergent-ai/surogate-agent/commit/72a507c5d0bb525f783445122c3f0bbf189c15dd))
+* Fixed .doc,.docx preview (convert to pdf first), added extra production deps to core deps and documented uv sync ([8626cef](https://github.com/invergent-ai/surogate-agent/commit/8626cef78cbecf34e9c064794b6d81912bc38001))
+* Reload skill activities ([1a0618b](https://github.com/invergent-ai/surogate-agent/commit/1a0618b5352dff0f2ba494fb78bd0884e610cf5c))
+* root dev conversations were loosing context ([467c40f](https://github.com/invergent-ai/surogate-agent/commit/467c40f094643d80129e8bcf6739a305ee4fe78d))
+* self-healing mcp servers ([f5bdff7](https://github.com/invergent-ai/surogate-agent/commit/f5bdff7a4069c622b3b5523a4e5afeaef62ed7c6))
+* Separate operational db from checkpoints ([a23a797](https://github.com/invergent-ai/surogate-agent/commit/a23a797922ee5d376958639f4f6e675c61467fef))
+* Show all skill activations ([ab12d2a](https://github.com/invergent-ai/surogate-agent/commit/ab12d2a84b6393fe9b81bebd5743589824f7dccf))
+* test as user sessions lifecycle ([7ad9428](https://github.com/invergent-ai/surogate-agent/commit/7ad9428c82f93b5446e82a945b94e314b7446510))
+* Working _root scratch folder ([2705d4e](https://github.com/invergent-ai/surogate-agent/commit/2705d4edf2b2f0a8733f98fcf7c3b5a288968b22))
+
 ## [1.3.1](https://github.com/invergent-ai/surogate-agent/compare/v1.3.0...v1.3.1) (2026-03-04)
 
 
