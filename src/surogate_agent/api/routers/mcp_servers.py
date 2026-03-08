@@ -42,24 +42,46 @@ def _to_response(entry: McpServerEntry, status: str) -> McpServerResponse:
         transport=entry.transport,
         host=entry.host,
         port=entry.port,
-        tools=[McpToolInfo(name=t.get("name", ""), description=t.get("description", "")) for t in entry.tools],
+        tools=[
+            McpToolInfo(
+                name=t.get("name", "") if isinstance(t, dict) else str(t),
+                description=t.get("description", "") if isinstance(t, dict) else "",
+            )
+            for t in entry.tools
+        ],
         registered_at=entry.registered_at,
         status=status,
     )
 
 
+def _maybe_autostart(entry, lifecycle: MCPLifecycle) -> None:
+    """Schedule a background start for an enabled stdio server not yet running.
+
+    Must be called from an async context (event loop thread) so that
+    asyncio.create_task works correctly.
+    """
+    import asyncio
+    if entry.transport != "stdio" or not entry.enabled or lifecycle.get_status(entry) == "running":
+        return
+    log.info("auto-starting stdio server %r (enabled but not running)", entry.name)
+    asyncio.create_task(lifecycle.start_stdio_server(entry))
+
+
 @router.get("", response_model=list[McpServerResponse])
-def list_servers(
+async def list_servers(
     settings: ServerSettings = Depends(settings_dep),
     _user: User = Depends(_require_developer),
 ) -> list[McpServerResponse]:
     registry = MCPRegistry(settings.mcp_scripts_dir)
     lifecycle = MCPLifecycle(settings.mcp_scripts_dir)
-    return [_to_response(e, lifecycle.get_status(e)) for e in registry.list()]
+    entries = registry.list()
+    for e in entries:
+        _maybe_autostart(e, lifecycle)
+    return [_to_response(e, lifecycle.get_status(e)) for e in entries]
 
 
 @router.get("/{name}", response_model=McpServerResponse)
-def get_server(
+async def get_server(
     name: str,
     settings: ServerSettings = Depends(settings_dep),
     _user: User = Depends(_require_developer),
@@ -69,6 +91,7 @@ def get_server(
     if entry is None:
         raise HTTPException(status_code=404, detail=f"MCP server '{name}' not found")
     lifecycle = MCPLifecycle(settings.mcp_scripts_dir)
+    _maybe_autostart(entry, lifecycle)
     return _to_response(entry, lifecycle.get_status(entry))
 
 

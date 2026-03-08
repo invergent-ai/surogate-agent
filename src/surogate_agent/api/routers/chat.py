@@ -207,11 +207,38 @@ async def _stream_chat(
 
         # Inject MCP tools for all roles (optional — never blocks chat)
         try:
-            from surogate_agent.mcp.lifecycle import MCPLifecycle
+            from surogate_agent.mcp.lifecycle import MCPLifecycle, _HTTP_TOOLS
             from surogate_agent.mcp.registry import MCPRegistry
             _mcp_registry = MCPRegistry(settings.mcp_scripts_dir)
             _mcp_lifecycle = MCPLifecycle(settings.mcp_scripts_dir)
             for _entry in _mcp_registry.list():
+                # Auto-start enabled stdio servers that are registered but not yet
+                # running in memory (e.g. registered via mcp-manager skill writing
+                # registry.json directly rather than through the API endpoint).
+                if (
+                    _entry.transport == "stdio"
+                    and _entry.enabled
+                    and _mcp_lifecycle.get_status(_entry) != "running"
+                ):
+                    log.info("auto-starting stdio server %r (registered but not running)", _entry.name)
+                    try:
+                        await asyncio.wait_for(
+                            _mcp_lifecycle.start_stdio_server(_entry),
+                            timeout=30,
+                        )
+                    except Exception as _start_exc:
+                        log.warning("auto-start stdio %r failed: %s", _entry.name, _start_exc)
+                # Auto-cache tools for enabled HTTP/SSE servers not yet in cache.
+                if (
+                    _entry.enabled
+                    and _entry.transport in ("http", "sse")
+                    and _entry.name not in _HTTP_TOOLS
+                    and _mcp_lifecycle.get_status(_entry) == "running"
+                ):
+                    try:
+                        await _mcp_lifecycle._fetch_and_cache_http_tools(_entry)
+                    except Exception as _fetch_exc:
+                        log.debug("auto-cache http tools %r failed: %s", _entry.name, _fetch_exc)
                 if _mcp_lifecycle.get_status(_entry) == "running":
                     config.extra_tools.extend(await _mcp_lifecycle.get_tools(_entry))
         except Exception as _mcp_exc:

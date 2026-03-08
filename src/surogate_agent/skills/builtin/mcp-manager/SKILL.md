@@ -23,6 +23,37 @@ Always substitute the actual absolute paths shown in your system context. Never 
 
 ---
 
+## ABSOLUTE RULE: never ask, never suggest — just execute all steps
+
+**You MUST complete every step of the register flow without pausing, asking for confirmation,
+or printing a "now you can register it with…" hint.** The developer asked you to register —
+do it. Any message like:
+
+- "If you want this added to the registry…"
+- "To register, run: …"
+- "Would you like me to add this to registry.json?"
+- "register it with: name: … command: …"
+- "If you want me to finalize it into the MCP registry entry…"
+- "tell me what command/fields your registry expects"
+- "some setups require specifying stdio vs http explicitly"
+- "If you want, I can run a quick probe invocation to confirm…"
+- Any offer to optionally run, test, or verify after the fact
+- Any question about transport, fields, or registry format
+
+…is a violation of this rule. Execute step 7 (write registry.json) and step 8 (reply with
+three lines) immediately after probing. No prompts. No suggestions. No interactive flow.
+
+**You already have everything you need after step 6:**
+- `<name>` — inferred from the repo URL
+- `<transport>` — determined in step 4
+- `<port>` — determined in step 4 (0 for stdio)
+- `<tools>` — from the probe output in step 6
+- `<start_command>` and `<cwd>` — from the start.sh you wrote in step 5
+
+There is nothing left to ask. Write registry.json immediately.
+
+---
+
 ## CRITICAL: use `execute` for ALL filesystem operations on paths 3 and 4
 
 The `ls`, `glob`, `read_file`, and `write_file` tools are sandboxed to the session workspace.
@@ -45,7 +76,9 @@ creating directories, cloning — MUST go through the `execute` tool.
 
 ## Register flow
 
-Execute every step in order. Do not stop after writing `start.sh` — that alone does nothing.
+Execute every step in order without asking for confirmation. Infer the registry `<name>` from
+the repo URL or directory (last path segment, lowercased, spaces/underscores replaced with hyphens).
+Do not stop after writing `start.sh` — that alone does nothing.
 The server only becomes available after step 8 (registry write).
 
 ### Step 1 — Ensure directories and clone the repo
@@ -76,6 +109,27 @@ From the README and source determine:
 ```bash
 grep -ri "transport\|sse\|uvicorn\|fastmcp\|--port" <MCP_WORKSPACE>/repos/<name>/ --include="*.py" -l 2>/dev/null | head -5
 ```
+
+**CRITICAL — check for stdout pollution in the entry point:**
+
+Any `print()` call (without `file=sys.stderr`) in the entry point or any module it imports at
+startup will corrupt the stdio JSON-RPC channel, causing `Failed to parse JSONRPC message`
+errors. You MUST check for and fix these before registering:
+
+```bash
+grep -n "^print\|^\s*print(" <MCP_WORKSPACE>/repos/<name>/<entry_point>.py | head -20
+```
+
+For every startup `print(...)` found (logging config loaded, transport announced, server
+starting, etc.), patch it in-place to use stderr:
+
+```bash
+# Example: fix print("Transport: stdio") → print("Transport: stdio", file=sys.stderr)
+sed -i 's/^\(\s*print(\(.*\)\)$/\1, file=sys.stderr)/' <MCP_WORKSPACE>/repos/<name>/<entry_point>.py
+```
+
+Or read the file, fix the prints manually with `execute`, and write it back.
+After patching, verify no bare `print(` remain at module level.
 
 ### Step 3 — Create isolated venv and install dependencies
 
@@ -117,8 +171,10 @@ timeout 5 python <MCP_WORKSPACE>/repos/<name>/<entry_point>.py --help < /dev/nul
 blocking.  `timeout 5` kills it after 5 seconds regardless.  A non-zero exit or
 "no-sse-flag" means stdio only.
 
-- If SSE is supported → use `transport: sse`, pick a free port starting from 8101
-- If stdio only → use `transport: stdio`, set `port: 0`
+- **Default: always use `transport: stdio`, set `port: 0`.**
+- Only use `transport: sse` if the server has NO stdio mode at all (i.e. it only starts
+  as an HTTP/SSE server and has no stdin/stdout MCP entrypoint). If the server supports
+  both, always prefer stdio.
 
 To find a free port:
 ```bash
@@ -133,11 +189,36 @@ for p in range(8101, 8200):
 
 ### Step 5 — Write `start.sh` into MCP scripts
 
-The startup script must be **self-healing**: if the repo, venv, or probe files are missing
-(e.g. after export/import to a new machine or workspace wipe), the script clones the repo and
-rebuilds the venv automatically before starting the server. This makes the script portable.
+The startup script must be **self-healing**: if the repo or venv are missing (e.g. after
+export/import to a new machine or workspace wipe), the script clones the repo and rebuilds
+the venv automatically before starting the server. This makes the script portable.
 
-For **stdio** servers:
+**CRITICAL — substitute literal values, never shell variables:**
+The placeholders `<MCP_WORKSPACE>`, `<name>`, `<repo_url>`, `<entry_point>` must be replaced
+with their **actual absolute values** before writing the file. The resulting script must
+contain hardcoded paths like `/data/mcp-workspace/repos/my-server`, not shell variable
+references like `$MCP_WORKSPACE` or `$NAME`. The script runs without any special environment
+variables set — only the variables it defines itself are available. Using `$MCP_WORKSPACE`
+will cause `set -u` to abort with "unbound variable".
+
+Example of **WRONG** (env var references — will fail with "unbound variable"):
+```
+REPO="$MCP_WORKSPACE/repos/$NAME"   ← WRONG
+git clone "$REPO_URL" "$REPO"       ← WRONG
+```
+
+Example of **CORRECT** (hardcoded absolute paths):
+```
+REPO="/data/mcp-workspace/repos/my-server"   ← CORRECT
+git clone "https://github.com/org/my-server" "$REPO"   ← CORRECT
+```
+
+Both requirements apply **at the same time**: hardcode literal paths AND include the
+self-healing block. The self-healing block uses `$REPO` and `$VENV` which are shell variables
+defined two lines above — those are fine. What is forbidden is using `$MCP_WORKSPACE`,
+`$NAME`, `$REPO_URL` etc. that the script itself never defines.
+
+For **stdio** servers — substitute real values for every `<placeholder>` before writing:
 ```bash
 cat > <MCP_SCRIPTS>/<name>/start.sh << 'STARTSH'
 #!/usr/bin/env bash
@@ -149,7 +230,7 @@ VENV="<MCP_WORKSPACE>/venvs/<name>"
 if [ ! -d "$REPO/.git" ]; then
   echo "Repo missing — cloning..." >&2
   mkdir -p "$(dirname "$REPO")"
-  git clone <repo_url> "$REPO" >&2
+  git clone "<repo_url>" "$REPO" >&2
 fi
 
 # Self-heal: create venv and install deps if missing
@@ -171,6 +252,40 @@ export PYTHONPATH="$REPO${PYTHONPATH:+:$PYTHONPATH}"
 exec python "$REPO/<entry_point>.py"
 STARTSH
 chmod +x <MCP_SCRIPTS>/<name>/start.sh
+```
+
+The result after substitution must look like this concrete example — every placeholder
+replaced with a real absolute value, self-healing block intact:
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+REPO="/data/mcp-workspace/repos/office-word-mcp-server"
+VENV="/data/mcp-workspace/venvs/office-word-mcp-server"
+
+# Self-heal: clone repo if missing
+if [ ! -d "$REPO/.git" ]; then
+  echo "Repo missing — cloning..." >&2
+  mkdir -p "$(dirname "$REPO")"
+  git clone "https://github.com/example/office-word-mcp-server" "$REPO" >&2
+fi
+
+# Self-heal: create venv and install deps if missing
+if [ ! -f "$VENV/bin/python" ]; then
+  echo "Venv missing — creating..." >&2
+  mkdir -p "$(dirname "$VENV")"
+  uv venv "$VENV" >&2
+  source "$VENV/bin/activate"
+  if [ -f "$REPO/requirements.txt" ]; then
+    uv pip install -r "$REPO/requirements.txt" >&2 || pip install -r "$REPO/requirements.txt" >&2
+  elif [ -f "$REPO/pyproject.toml" ]; then
+    uv pip install -e "$REPO" >&2 || pip install -e "$REPO" >&2
+  fi
+else
+  source "$VENV/bin/activate"
+fi
+
+export PYTHONPATH="$REPO${PYTHONPATH:+:$PYTHONPATH}"
+exec python "$REPO/word_mcp_server.py"
 ```
 
 For **SSE** servers:
@@ -384,7 +499,10 @@ for e in entries:
 3. **Always complete all 8 steps** — stop.sh alone does nothing. The server is only visible after step 7 writes `registry.json`.
 4. **Probe before registering** — get the real tool list from the running server. Do not invent tool names.
 5. **uv first, pip fallback** — ignore what the repo README says about pip. Always try `uv pip install` first.
-6. **stdio is fine** — do not force SSE if the server does not support it. stdio servers have tools injected per-session automatically.
-7. **Never `echo` to stdout in a stdio start.sh** — stdout is the MCP JSON-RPC channel. Any non-JSON output (echo, printf, set -x traces) breaks the protocol. Redirect diagnostics to stderr: `echo "..." >&2`.
+6. **stdio by default, always** — use `transport: stdio` unless the server has no stdio entrypoint whatsoever (HTTP-only server). If the server supports both, always choose stdio. Never use SSE just because it is available.
+6b. **Never ask, never hint, never suggest** — infer the name, complete all 8 steps, and reply with exactly three lines. Phrases like "If you want this added to the registry…", "To register, run: name: … command: …", or any variant are forbidden. The developer asked you to register — just do it.
+7. **Eliminate ALL stdout pollution before registering** — both the start.sh and the server's own Python code must never print to stdout. Check the entry point for bare `print(...)` calls and patch them to `print(..., file=sys.stderr)`. Any startup message on stdout (`Loading config`, `Transport: stdio`, `Server starting…`) breaks the JSON-RPC channel with `Failed to parse JSONRPC message` errors. Fix in Step 2 before writing start.sh.
+8. **Hardcode all paths in start.sh — no env var placeholders** — replace every `<MCP_WORKSPACE>`, `<name>`, `<repo_url>`, `<entry_point>` with its actual absolute value before writing the file. The script runs with no special environment set; `$MCP_WORKSPACE`, `$NAME`, `$REPO_URL` are all unbound and will cause `set -u` to abort immediately.
+8. **Never `echo` to stdout in a stdio start.sh** — stdout is the MCP JSON-RPC channel. Any non-JSON output (echo, printf, set -x traces) breaks the protocol. Redirect diagnostics to stderr: `echo "..." >&2`.
 8. **Always add self-healing checks to start.sh** — every start.sh must check whether the repo (`$REPO/.git`) and venv (`$VENV/bin/python`) exist before starting. If either is missing, clone the repo and/or rebuild the venv inline. This makes the script work after export/import, workspace wipe, or first run on a new machine. All output from the healing steps must go to stderr.
 9. **Reply with three lines only** — name, transport, tool list. No usage examples, no descriptions.

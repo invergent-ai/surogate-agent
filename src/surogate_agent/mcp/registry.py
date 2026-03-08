@@ -39,12 +39,15 @@ class McpServerEntry:
         return cls(
             name=d["name"],
             repo_url=d.get("repo_url", ""),
-            start_command=d.get("start_command", ""),
-            cwd=d.get("cwd", ""),
+            start_command=" ".join(d["start_command"]) if isinstance(d.get("start_command"), list) else d.get("start_command", ""),
+            cwd=" ".join(d["cwd"]) if isinstance(d.get("cwd"), list) else d.get("cwd", ""),
             transport=d.get("transport", "sse"),
             host=d.get("host", "localhost"),
             port=int(d.get("port", 8101)),
-            tools=d.get("tools", []),
+            tools=[
+                t if isinstance(t, dict) else {"name": str(t), "description": ""}
+                for t in d.get("tools", [])
+            ],
             registered_at=d.get("registered_at", datetime.now(timezone.utc).isoformat()),
             enabled=d.get("enabled", True),
         )

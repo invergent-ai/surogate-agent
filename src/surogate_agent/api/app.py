@@ -26,9 +26,44 @@ log = get_logger(__name__)
 _STATIC_DIR = os.environ.get("SUROGATE_STATIC_DIR", "")
 
 
+async def _mcp_registry_watcher(lifecycle, registry_path, poll_interval: float = 2.0) -> None:
+    """Background task: watch registry.json for new enabled servers and start them.
+
+    Polls every *poll_interval* seconds.  Only fires start logic when the file's
+    mtime advances, so the steady-state cost is a single stat() call per interval.
+    """
+    import asyncio
+    from surogate_agent.mcp.lifecycle import _STDIO_SERVERS
+    from surogate_agent.mcp.registry import MCPRegistry
+
+    last_mtime: float = 0.0
+    while True:
+        await asyncio.sleep(poll_interval)
+        try:
+            mtime = registry_path.stat().st_mtime if registry_path.exists() else 0.0
+            if mtime <= last_mtime:
+                continue
+            last_mtime = mtime
+
+            registry = MCPRegistry(registry_path.parent)
+            for entry in registry.list():
+                if (
+                    entry.transport == "stdio"
+                    and entry.enabled
+                    and (entry.name not in _STDIO_SERVERS or _STDIO_SERVERS[entry.name].task.done())
+                ):
+                    log.info("registry watcher: auto-starting new stdio server %r", entry.name)
+                    asyncio.create_task(lifecycle.start_stdio_server(entry))
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            log.debug("registry watcher error: %s", exc)
+
+
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Create database tables on startup (idempotent)."""
+    import asyncio
     # Ensure logging is configured from env var when the app starts without
     # an explicit CLI invocation (e.g. uvicorn called directly).
     setup_logging()
@@ -55,8 +90,18 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     except Exception as exc:
         log.warning("MCP startup error: %s", exc)
 
+    # Watch registry.json for new servers added by the mcp-manager skill
+    _watcher_task = asyncio.create_task(
+        _mcp_registry_watcher(_mcp_lifecycle, _settings.mcp_scripts_dir / "registry.json")
+    )
+
     yield
     log.info("surogate-agent API shut down")
+    _watcher_task.cancel()
+    try:
+        await _watcher_task
+    except asyncio.CancelledError:
+        pass
     try:
         await _mcp_lifecycle.stop_all()
     except Exception as exc:
