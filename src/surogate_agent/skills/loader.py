@@ -248,6 +248,37 @@ def _synthesize_frontmatter(skill_dir: Path, body: str) -> str:
     return synthesized
 
 
+def _normalize_fm_values(fm: dict, skill_dir_name: str) -> tuple[dict, bool]:
+    """Fix known-problematic frontmatter values in-place; return (fm, changed).
+
+    Normalised cases:
+    - ``allowed-tools`` is a YAML list → space-separated string (empty list → remove key)
+    - ``role-restriction`` is the string ``"none"`` or ``"null"`` → remove key (means all roles)
+    """
+    changed = False
+
+    raw_tools = fm.get("allowed-tools")
+    if isinstance(raw_tools, list):
+        tools_str = " ".join(str(t) for t in raw_tools)
+        if tools_str:
+            fm["allowed-tools"] = tools_str
+        else:
+            del fm["allowed-tools"]
+        log.debug(
+            "normalized 'allowed-tools' list → %r in '%s'",
+            fm.get("allowed-tools", ""), skill_dir_name,
+        )
+        changed = True
+
+    role_raw = fm.get("role-restriction")
+    if isinstance(role_raw, str) and role_raw.strip().lower() in ("none", "null", ""):
+        del fm["role-restriction"]
+        log.debug("removed 'role-restriction: %s' from '%s'", role_raw, skill_dir_name)
+        changed = True
+
+    return fm, changed
+
+
 def _parse_skill(skill_dir: Path, skill_md: Path) -> SkillInfo:
     raw = skill_md.read_text(encoding="utf-8")
     text = _normalize_skill_md(raw)
@@ -258,12 +289,6 @@ def _parse_skill(skill_dir: Path, skill_md: Path) -> SkillInfo:
         # skill is still usable and appears in the registry / frontend.
         text = _synthesize_frontmatter(skill_dir, text)
         match = _FRONTMATTER_RE.match(text)
-
-    # Rewrite the file on disk whenever the content changed (normalization or
-    # synthesis) so future reads always see a clean, valid SKILL.md.
-    if text != raw:
-        log.debug("rewrote SKILL.md for '%s' (normalization or synthesis applied)", skill_dir.name)
-        skill_md.write_text(text, encoding="utf-8")
 
     fm_text = match.group(1)  # type: ignore[union-attr]
     try:
@@ -278,6 +303,22 @@ def _parse_skill(skill_dir: Path, skill_md: Path) -> SkillInfo:
             skill_dir.name,
         )
         fm = _extract_frontmatter_fields(fm_text)
+
+    # Normalise problematic values (list allowed-tools, role "none") and
+    # rebuild the frontmatter text if anything changed.
+    fm, fm_changed = _normalize_fm_values(fm, skill_dir.name)
+    if fm_changed:
+        clean_fm = {k: v for k, v in fm.items() if v is not None}
+        fm_yaml = yaml.dump(clean_fm, default_flow_style=False, allow_unicode=True)
+        body = text[match.end():]  # type: ignore[union-attr]
+        text = f"---\n{fm_yaml}---\n{body}"
+        match = _FRONTMATTER_RE.match(text)
+
+    # Rewrite the file on disk whenever the content changed (structural
+    # normalisation, synthesis, or frontmatter value fix).
+    if text != raw:
+        log.debug("rewrote SKILL.md for '%s' (normalization applied)", skill_dir.name)
+        skill_md.write_text(text, encoding="utf-8")
 
     # Fall back to directory name when 'name' is missing from the frontmatter.
     name: str = fm.get("name") or skill_dir.name
