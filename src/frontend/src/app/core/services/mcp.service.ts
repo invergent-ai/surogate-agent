@@ -4,6 +4,7 @@ import { Observable } from 'rxjs';
 import { ApiConfigService } from './api-config.service';
 import { McpServer } from '../models/mcp.models';
 
+
 @Injectable({ providedIn: 'root' })
 export class McpService {
   constructor(private http: HttpClient, private config: ApiConfigService) {}
@@ -43,5 +44,15 @@ export class McpService {
       port,
       repo_url: serverUrl,
     });
+  }
+
+  exportServer(name: string): Observable<Blob> {
+    return this.http.get(this.url(`/${name}/export`), { responseType: 'blob' });
+  }
+
+  importServer(file: File): Observable<McpServer> {
+    const form = new FormData();
+    form.append('file', file);
+    return this.http.post<McpServer>(this.url('/import'), form);
   }
 }

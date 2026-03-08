@@ -33,6 +33,9 @@ class _StdioServer:
 # Global stdio session registry: name → _StdioServer
 _STDIO_SERVERS: dict[str, _StdioServer] = {}
 
+# Cached LangChain tools for HTTP/SSE servers (pre-fetched at startup / start)
+_HTTP_TOOLS: dict[str, list] = {}
+
 
 def _unwrap_exc(exc: BaseException | None) -> str:
     """Return a human-readable string from a possibly-wrapped exception.
@@ -344,19 +347,46 @@ class MCPLifecycle:
     # Bulk start / stop (called from app lifespan)
     # ------------------------------------------------------------------
 
+    async def _fetch_and_cache_http_tools(self, entry: "McpServerEntry") -> list:
+        """Connect to an HTTP/SSE server, fetch its tools, cache and return them."""
+        try:
+            from langchain_mcp_adapters.client import MultiServerMCPClient
+        except ImportError as exc:
+            raise RuntimeError("langchain-mcp-adapters is not installed") from exc
+
+        if entry.transport == "sse":
+            url = entry.repo_url if entry.repo_url else f"http://{entry.host}:{entry.port}/sse"
+            server_config = {entry.name: {"url": url, "transport": "sse"}}
+        else:  # http
+            base_url = entry.repo_url if entry.repo_url else f"http://{entry.host}:{entry.port}"
+            server_config = {entry.name: {"url": base_url, "transport": "streamable_http"}}
+
+        log.debug("_fetch_and_cache_http_tools: connecting to %r (transport=%s)", entry.name, entry.transport)
+        client = MultiServerMCPClient(server_config)
+        tools = await asyncio.wait_for(client.get_tools(), timeout=10.0)
+        for tool in tools:
+            _patch_mcp_tool(tool)
+        _HTTP_TOOLS[entry.name] = tools
+        log.info("_fetch_and_cache_http_tools: %r → cached %d tool(s)", entry.name, len(tools))
+        return tools
+
     async def start_all(self, registry: "MCPRegistry") -> None:
         """Start all servers that should be running at server boot.
 
         - Local SSE servers (transport=sse, no repo_url, enabled): spawn daemon.
         - stdio servers (enabled): start persistent session.
-        - Remote SSE / HTTP: no action — availability determined by HTTP ping.
+        - Remote SSE / HTTP (enabled): pre-fetch and cache tools.
         """
         all_entries = registry.list()
         sse_entries = [e for e in all_entries if e.transport == "sse" and not e.repo_url and e.enabled]
         stdio_entries = [e for e in all_entries if e.transport == "stdio" and e.enabled]
+        http_entries = [
+            e for e in all_entries
+            if e.enabled and (e.transport == "http" or (e.transport == "sse" and e.repo_url))
+        ]
         log.info(
-            "MCPLifecycle.start_all: %d total — %d local SSE, %d stdio to start",
-            len(all_entries), len(sse_entries), len(stdio_entries),
+            "MCPLifecycle.start_all: %d total — %d local SSE, %d stdio, %d http/remote-sse to start",
+            len(all_entries), len(sse_entries), len(stdio_entries), len(http_entries),
         )
 
         for entry in sse_entries:
@@ -379,12 +409,23 @@ class MCPLifecycle:
             except Exception as exc:
                 log.warning("start_all: failed to start stdio %r: %s", entry.name, exc)
 
+        for entry in http_entries:
+            if entry.name in _HTTP_TOOLS:
+                log.debug("start_all: http/sse %r tools already cached", entry.name)
+                continue
+            log.info("start_all: pre-fetching tools for %r (transport=%s)", entry.name, entry.transport)
+            try:
+                await self._fetch_and_cache_http_tools(entry)
+            except Exception as exc:
+                log.warning("start_all: failed to fetch tools for %r: %s", entry.name, exc)
+
     async def stop_all(self) -> None:
         """Terminate all tracked SSE daemon processes and stdio sessions."""
         log.info(
-            "MCPLifecycle.stop_all: %d SSE process(es), %d stdio session(s)",
-            len(_PROCESSES), len(_STDIO_SERVERS),
+            "MCPLifecycle.stop_all: %d SSE process(es), %d stdio session(s), %d http cache(s)",
+            len(_PROCESSES), len(_STDIO_SERVERS), len(_HTTP_TOOLS),
         )
+        _HTTP_TOOLS.clear()
 
         # SSE daemon processes
         for name, proc in list(_PROCESSES.items()):
@@ -418,7 +459,8 @@ class MCPLifecycle:
         """Return LangChain tools for this MCP server.
 
         - stdio: returns tools from the live persistent session (no new process).
-        - SSE / HTTP: connects to the running daemon / URL.
+        - SSE / HTTP: returns cached tools (pre-fetched at startup / on start).
+          Falls back to a live connection if the cache is empty.
         """
         try:
             if entry.transport == "stdio":
@@ -429,22 +471,14 @@ class MCPLifecycle:
                 log.debug("get_tools: stdio %r has no live session — returning empty", entry.name)
                 return []
 
-            from langchain_mcp_adapters.client import MultiServerMCPClient
+            # HTTP / SSE: use pre-fetched cache; fall back to live fetch if missing
+            cached = _HTTP_TOOLS.get(entry.name)
+            if cached is not None:
+                log.debug("get_tools: %r — returning %d cached http/sse tool(s)", entry.name, len(cached))
+                return list(cached)
 
-            if entry.transport == "sse":
-                url = entry.repo_url if entry.repo_url else f"http://{entry.host}:{entry.port}/sse"
-                server_config = {entry.name: {"url": url, "transport": "sse"}}
-            else:  # http
-                base_url = entry.repo_url if entry.repo_url else f"http://{entry.host}:{entry.port}"
-                server_config = {entry.name: {"url": base_url, "transport": "streamable_http"}}
-
-            log.debug("MCPLifecycle.get_tools: connecting to %r (transport=%s)", entry.name, entry.transport)
-            client = MultiServerMCPClient(server_config)
-            tools = await client.get_tools()
-            for tool in tools:
-                _patch_mcp_tool(tool)
-            log.info("MCPLifecycle.get_tools: %r → %d tool(s)", entry.name, len(tools))
-            return tools
+            log.debug("get_tools: %r — no cache, fetching live (transport=%s)", entry.name, entry.transport)
+            return await self._fetch_and_cache_http_tools(entry)
 
         except Exception as exc:
             log.warning("MCPLifecycle.get_tools: failed for %r: %s", entry.name, exc)

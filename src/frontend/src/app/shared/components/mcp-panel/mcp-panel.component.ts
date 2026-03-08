@@ -30,6 +30,11 @@ export class McpPanelComponent implements OnInit {
   adding = signal(false);
   addError = signal('');
 
+  // Export / import
+  exporting = signal<string | null>(null);
+  importing = signal(false);
+  importError = signal('');
+
   ngOnInit(): void {
     this.load();
   }
@@ -140,6 +145,45 @@ export class McpPanelComponent implements OnInit {
   cancelAdd(): void {
     this.showAddForm.set(false);
     this.addError.set('');
+  }
+
+  exportServer(name: string): void {
+    this.exporting.set(name);
+    this.mcpService.exportServer(name).subscribe({
+      next: (blob) => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${name}-mcp-export.zip`;
+        a.click();
+        URL.revokeObjectURL(url);
+        this.exporting.set(null);
+      },
+      error: () => {
+        this.exporting.set(null);
+        this.error.set(`Failed to export '${name}'.`);
+      },
+    });
+  }
+
+  onImportFile(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    input.value = '';
+    this.importing.set(true);
+    this.importError.set('');
+    this.mcpService.importServer(file).subscribe({
+      next: (server) => {
+        this.importing.set(false);
+        this.servers.set([...this.servers().filter(s => s.name !== server.name), server]);
+      },
+      error: (err) => {
+        this.importing.set(false);
+        const detail = err?.error?.detail ?? 'Failed to import server.';
+        this.importError.set(detail);
+      },
+    });
   }
 
   addServer(): void {
