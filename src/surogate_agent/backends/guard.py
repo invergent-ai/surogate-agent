@@ -204,11 +204,38 @@ def make_guarded_local_shell_backend(
 ):
     """Return a ``LocalShellBackend`` instance guarded by *rw_paths*/*ro_paths*.
 
-    Note: ``execute()`` is not path-sandboxed — see module docstring.
+    execute() is checked for destructive operations targeting ro_paths.
+    Commands that don't reference protected paths are passed through unmodified
+    so user sessions with execute-enabled skills continue to work normally.
     """
     from deepagents.backends.local_shell import LocalShellBackend
 
+    # Tokens that indicate a write/destructive operation in a shell command.
+    _DESTRUCTIVE = frozenset([
+        "rm ", "rm\t", "rmdir ", "unlink ",
+        "echo ", "printf ", "cat >", "cat>",
+        "tee ", "tee\t", "truncate ",
+        "mv ", "mv\t", "cp ", "cp\t",
+        "sed -i", "dd ",
+        "> ", ">>",                     # output redirections
+    ])
+
     class _GuardedLocalShellBackend(PermissionGuardMixin, LocalShellBackend):
-        pass
+        def execute(self, command: str, **kw):  # type: ignore[override]
+            cmd = command if isinstance(command, str) else str(command)
+            has_destructive = any(tok in cmd for tok in _DESTRUCTIVE)
+            if has_destructive:
+                for base in self._ro_paths:
+                    base_str = str(base)
+                    if base_str in cmd:
+                        log.warning(
+                            "execute blocked: destructive command targets ro path %s", base_str
+                        )
+                        return (
+                            f"Error: Shell execution blocked — the command targets a "
+                            f"read-only path '{base_str}'. Skill and builtin files must "
+                            "not be modified or deleted."
+                        )
+            return super().execute(command, **kw)  # type: ignore[misc]
 
     return _GuardedLocalShellBackend(rw_paths=rw_paths, ro_paths=ro_paths, **kwargs)
