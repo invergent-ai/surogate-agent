@@ -50,7 +50,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     _mcp_lifecycle = MCPLifecycle(_settings.mcp_scripts_dir)
     _mcp_registry = MCPRegistry(_settings.mcp_scripts_dir)
     try:
-        _mcp_lifecycle.start_all(_mcp_registry)
+        await _mcp_lifecycle.start_all(_mcp_registry)
         app.state.mcp_lifecycle = _mcp_lifecycle
     except Exception as exc:
         log.warning("MCP startup error: %s", exc)
@@ -58,7 +58,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     yield
     log.info("surogate-agent API shut down")
     try:
-        _mcp_lifecycle.stop_all()
+        await _mcp_lifecycle.stop_all()
     except Exception as exc:
         log.warning("MCP shutdown error: %s", exc)
 

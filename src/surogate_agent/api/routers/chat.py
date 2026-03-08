@@ -212,7 +212,7 @@ async def _stream_chat(
             _mcp_registry = MCPRegistry(settings.mcp_scripts_dir)
             _mcp_lifecycle = MCPLifecycle(settings.mcp_scripts_dir)
             for _entry in _mcp_registry.list():
-                if _mcp_lifecycle.get_status(_entry) in ("running", "available"):
+                if _mcp_lifecycle.get_status(_entry) == "running":
                     config.extra_tools.extend(await _mcp_lifecycle.get_tools(_entry))
         except Exception as _mcp_exc:
             log.debug("MCP tool injection skipped: %s", _mcp_exc)

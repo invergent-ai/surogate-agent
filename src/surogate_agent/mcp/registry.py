@@ -21,13 +21,18 @@ class McpServerEntry:
     repo_url: str
     start_command: str
     cwd: str
-    transport: str  # "sse" | "stdio"
+    transport: str  # "sse" | "stdio" | "http"
     host: str
     port: int
     tools: list[dict] = field(default_factory=list)  # [{"name": ..., "description": ...}]
     registered_at: str = field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
+    # Whether the server is enabled (tools injected into sessions).
+    # For stdio: True means tools are active (process spawned per session).
+    # For http/sse remote: True means tools are active (gated by enabled flag).
+    # For sse local: always True while process is running; persists desired state.
+    enabled: bool = True
 
     @classmethod
     def from_dict(cls, d: dict) -> "McpServerEntry":
@@ -41,6 +46,7 @@ class McpServerEntry:
             port=int(d.get("port", 8101)),
             tools=d.get("tools", []),
             registered_at=d.get("registered_at", datetime.now(timezone.utc).isoformat()),
+            enabled=d.get("enabled", True),
         )
 
 

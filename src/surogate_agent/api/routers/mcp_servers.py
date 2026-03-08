@@ -107,24 +107,37 @@ async def add_server(
     registry.add(entry)
     log.info("registered MCP server %r (transport=%s)", entry.name, entry.transport)
 
-    # Only attempt to start local SSE daemon servers (remote ones are already running).
-    if entry.transport == "sse" and not entry.repo_url:
+    if entry.transport == "stdio":
+        # Auto-start: launch persistent session, persist tools, mark enabled.
+        try:
+            lc_tools = await lifecycle.start_stdio_server(entry)
+            if lc_tools:
+                entry.tools = [
+                    {"name": t.name, "description": getattr(t, "description", "") or ""}
+                    for t in lc_tools
+                ]
+        except Exception as exc:
+            log.warning("could not start stdio server %r after registration: %s", entry.name, exc)
+        entry.enabled = True
+        registry.add(entry)
+        status = lifecycle.get_status(entry)
+    elif entry.transport == "sse" and not entry.repo_url:
+        # Local SSE daemon: spawn process and wait.
         try:
             if lifecycle.get_status(entry) != "running":
                 lifecycle.start_server(entry)
         except Exception as exc:
             log.warning("could not start MCP server %r after registration: %s", entry.name, exc)
-
-    if entry.transport == "sse" and not entry.repo_url:
         status = lifecycle.wait_for_running(entry)
     else:
+        # Remote SSE / HTTP: enabled by default, status from HTTP ping.
         status = lifecycle.get_status(entry)
 
     return _to_response(entry, status)
 
 
 @router.post("/{name}/start", response_model=McpServerResponse)
-def start_server(
+async def start_server(
     name: str,
     settings: ServerSettings = Depends(settings_dep),
     _user: User = Depends(_require_developer),
@@ -135,10 +148,31 @@ def start_server(
         raise HTTPException(status_code=404, detail=f"MCP server '{name}' not found")
     lifecycle = MCPLifecycle(settings.mcp_scripts_dir)
 
-    # Remote servers (repo_url set) and non-SSE servers have no local daemon to manage.
-    if entry.transport != "sse" or entry.repo_url:
+    if entry.transport == "stdio":
+        # Start persistent session (or reuse if already running), persist tools.
+        try:
+            lc_tools = await lifecycle.start_stdio_server(entry)
+            if lc_tools:
+                entry.tools = [
+                    {"name": t.name, "description": getattr(t, "description", "") or ""}
+                    for t in lc_tools
+                ]
+        except Exception as exc:
+            log.warning("could not start stdio server %r: %s", name, exc)
+            raise HTTPException(status_code=500, detail=f"Failed to start stdio server: {exc}") from exc
+        entry.enabled = True
+        registry.add(entry)
+        log.info("started stdio MCP server %r", name)
         return _to_response(entry, lifecycle.get_status(entry))
 
+    if entry.repo_url or entry.transport == "http":
+        # Remote / HTTP server: enable and report live status.
+        entry.enabled = True
+        registry.add(entry)
+        log.info("enabled %s MCP server %r", entry.transport, name)
+        return _to_response(entry, lifecycle.get_status(entry))
+
+    # Local SSE server: spawn process.
     if lifecycle.get_status(entry) == "running":
         return _to_response(entry, "running")
     try:
@@ -151,7 +185,7 @@ def start_server(
 
 
 @router.post("/{name}/stop", response_model=McpServerResponse)
-def stop_server(
+async def stop_server(
     name: str,
     settings: ServerSettings = Depends(settings_dep),
     _user: User = Depends(_require_developer),
@@ -160,37 +194,52 @@ def stop_server(
     entry = registry.get(name)
     if entry is None:
         raise HTTPException(status_code=404, detail=f"MCP server '{name}' not found")
-
-    from surogate_agent.mcp.lifecycle import _PROCESSES
-    proc = _PROCESSES.pop(name, None)
-    if proc is not None and proc.poll() is None:
-        proc.terminate()
-        try:
-            proc.wait(timeout=5)
-        except Exception:
-            proc.kill()
-        log.info("stopped MCP server %r", name)
-
     lifecycle = MCPLifecycle(settings.mcp_scripts_dir)
-    status = lifecycle.get_status(entry)
-    return _to_response(entry, status)
+
+    if entry.transport == "stdio":
+        await lifecycle.stop_stdio_server(entry)
+        entry.enabled = False
+        registry.add(entry)
+        log.info("stopped stdio MCP server %r", name)
+    elif entry.repo_url or entry.transport == "http":
+        entry.enabled = False
+        registry.add(entry)
+        log.info("disabled %s MCP server %r", entry.transport, name)
+    else:
+        # Local SSE daemon: kill process.
+        from surogate_agent.mcp.lifecycle import _PROCESSES
+        proc = _PROCESSES.pop(name, None)
+        if proc is not None and proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except Exception:
+                proc.kill()
+        log.info("stopped local SSE MCP server %r", name)
+
+    return _to_response(entry, lifecycle.get_status(entry))
 
 
 @router.delete("/{name}")
-def remove_server(
+async def remove_server(
     name: str,
     settings: ServerSettings = Depends(settings_dep),
     _user: User = Depends(_require_developer),
 ) -> dict:
     registry = MCPRegistry(settings.mcp_scripts_dir)
-    if not registry.remove(name):
+    entry = registry.get(name)
+    if entry is None or not registry.remove(name):
         raise HTTPException(status_code=404, detail=f"MCP server '{name}' not found")
 
-    # Stop the process if running
-    from surogate_agent.mcp.lifecycle import _PROCESSES
-    proc = _PROCESSES.pop(name, None)
-    if proc is not None and proc.poll() is None:
-        proc.terminate()
+    lifecycle = MCPLifecycle(settings.mcp_scripts_dir)
+
+    if entry.transport == "stdio":
+        await lifecycle.stop_stdio_server(entry)
+    else:
+        from surogate_agent.mcp.lifecycle import _PROCESSES
+        proc = _PROCESSES.pop(name, None)
+        if proc is not None and proc.poll() is None:
+            proc.terminate()
 
     # Remove scripts directory
     script_dir = settings.mcp_scripts_dir / name

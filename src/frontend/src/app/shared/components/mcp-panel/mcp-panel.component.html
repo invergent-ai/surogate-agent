@@ -3,7 +3,7 @@
   <!-- Header row -->
   <div class="flex items-center justify-between">
     <p class="text-xs text-gray-500 dark:text-zinc-400">
-      Registered servers start automatically and are injected into developer sessions.
+      Running servers are injected into developer sessions. stdio servers start automatically on registration.
     </p>
     <div class="flex items-center gap-2">
       <button
@@ -127,38 +127,31 @@
               <span class="w-1.5 h-1.5 rounded-full bg-green-500 dark:bg-green-400"></span>
               running
             </span>
-          } @else if (server.status === 'available') {
-            <span class="inline-flex items-center gap-1 text-xs font-medium text-amber-600 dark:text-amber-400">
-              <span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
-              available
-            </span>
           } @else {
             <span class="inline-flex items-center gap-1 text-xs font-medium text-gray-400 dark:text-zinc-500">
               <span class="w-1.5 h-1.5 rounded-full bg-gray-400 dark:bg-zinc-500"></span>
               stopped
             </span>
           }
-          <!-- Start/Stop button — local SSE servers only (remote and stdio need no daemon) -->
-          @if (server.transport === 'sse' && !server.repo_url) {
-            @if (server.status === 'running') {
-              <button
-                type="button"
-                (click)="stopServer(server.name)"
-                [disabled]="isPending(server.name)"
-                class="px-2 py-0.5 text-xs rounded border border-gray-200 dark:border-zinc-600 text-gray-600 dark:text-zinc-400 hover:bg-gray-100 dark:hover:bg-zinc-700 disabled:opacity-40 transition-colors"
-              >
-                @if (isPending(server.name)) { Stopping… } @else { Stop }
-              </button>
-            } @else {
-              <button
-                type="button"
-                (click)="startServer(server.name)"
-                [disabled]="isPending(server.name)"
-                class="px-2 py-0.5 text-xs rounded border border-green-200 dark:border-green-800/60 text-green-700 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-950/40 disabled:opacity-40 transition-colors"
-              >
-                @if (isPending(server.name)) { Starting… } @else { Start }
-              </button>
-            }
+          <!-- Start/Stop button — all transport types -->
+          @if (server.status === 'running') {
+            <button
+              type="button"
+              (click)="stopServer(server.name)"
+              [disabled]="isPending(server.name)"
+              class="px-2 py-0.5 text-xs rounded border border-gray-200 dark:border-zinc-600 text-gray-600 dark:text-zinc-400 hover:bg-gray-100 dark:hover:bg-zinc-700 disabled:opacity-40 transition-colors"
+            >
+              @if (isPending(server.name)) { Stopping… } @else { Stop }
+            </button>
+          } @else {
+            <button
+              type="button"
+              (click)="startServer(server.name)"
+              [disabled]="isPending(server.name)"
+              class="px-2 py-0.5 text-xs rounded border border-green-200 dark:border-green-800/60 text-green-700 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-950/40 disabled:opacity-40 transition-colors"
+            >
+              @if (isPending(server.name)) { Starting… } @else { Start }
+            </button>
           }
           <!-- Remove button -->
           <button
