@@ -5,6 +5,7 @@ Chat router — POST /chat  (Server-Sent Events stream)
 from __future__ import annotations
 
 import json
+import re
 import time
 from typing import AsyncGenerator
 
@@ -36,6 +37,7 @@ def _sse_event(event: str, data: dict) -> dict:
 
 
 def _extract_thinking(content) -> str:
+    """Extract structured thinking blocks (Claude extended thinking format)."""
     if not isinstance(content, list):
         return ""
     parts = []
@@ -45,6 +47,20 @@ def _extract_thinking(content) -> str:
         elif hasattr(block, "type") and getattr(block, "type", None) == "thinking":
             parts.append(getattr(block, "thinking", ""))
     return "\n\n".join(p for p in parts if p)
+
+
+def _extract_openrouter_reasoning(msg) -> str:
+    """Extract the OpenRouter reasoning field from a message.
+
+    When ``include: ["reasoning"]`` is sent, OpenRouter adds a ``reasoning``
+    string field alongside ``content`` on the assistant message.  LangChain
+    surfaces this in ``additional_kwargs`` or directly on the message object.
+    """
+    ak = (
+        msg.get("additional_kwargs", {}) if isinstance(msg, dict)
+        else getattr(msg, "additional_kwargs", {})
+    )
+    return ak.get("reasoning", "") or ""
 
 
 def _extract_content_text(content) -> str:
@@ -59,6 +75,25 @@ def _extract_content_text(content) -> str:
                 parts.append(getattr(block, "text", ""))
         return "".join(parts)
     return ""
+
+
+_THINK_TAG_RE = re.compile(r"<think>(.*?)</think>", re.DOTALL | re.IGNORECASE)
+
+
+def _split_inline_thinking(text: str) -> tuple[str, str]:
+    """Extract <think>…</think> blocks from a plain-text response.
+
+    Models like Qwen3 embed their chain-of-thought inline as ``<think>`` tags
+    rather than returning structured thinking blocks.  This splits them out so
+    the frontend can render them in the thinking panel instead of as raw text.
+
+    Returns ``(thinking, clean_text)`` where *thinking* is the joined content
+    of all ``<think>`` blocks and *clean_text* is the remainder with the tags
+    removed and leading/trailing whitespace stripped.
+    """
+    parts = _THINK_TAG_RE.findall(text)
+    clean = _THINK_TAG_RE.sub("", text).strip()
+    return "\n\n".join(p.strip() for p in parts if p.strip()), clean
 
 
 def _unwrap_messages(raw) -> list:
@@ -93,6 +128,81 @@ def _iter_messages(chunk):
             for item in node_output:
                 if _looks_like_message(item):
                     yield item
+
+
+# Tokens reserved for system prompt + tool schemas + model output.
+# Applies when vllm_context_length is set.  Tools alone can be 1000–2000 tokens;
+# the system prompt adds another 500–1000.  This constant keeps a safe margin.
+_VLLM_OVERHEAD_RESERVE = 3000
+
+
+def _estimate_msg_tokens(msg) -> int:
+    """Rough token estimate for a LangGraph message (4 chars ≈ 1 token)."""
+    content = (
+        msg.get("content", "") if isinstance(msg, dict)
+        else getattr(msg, "content", "")
+    )
+    if isinstance(content, str):
+        return max(1, len(content) // 4)
+    if isinstance(content, list):
+        total = 0
+        for block in content:
+            text = (
+                block.get("text", "") if isinstance(block, dict)
+                else getattr(block, "text", "")
+            )
+            total += max(1, len(str(text)) // 4)
+        return max(1, total)
+    return max(1, len(str(content)) // 4)
+
+
+async def _trim_checkpoint_to_context(
+    checkpointer,
+    invoke_config: dict,
+    checkpoint_tuple,
+    context_length: int,
+) -> None:
+    """Remove oldest messages from the LangGraph checkpoint so the stored
+    history fits within ``context_length - _VLLM_OVERHEAD_RESERVE`` tokens.
+
+    Always retains at least the last two messages (one complete exchange) so
+    the agent always has some context to work with.  Writes the trimmed
+    checkpoint back via ``aput`` so the next agent run sees the shorter state.
+    """
+    if not checkpoint_tuple or not checkpoint_tuple.checkpoint:
+        return
+
+    msg_budget = max(200, context_length - _VLLM_OVERHEAD_RESERVE)
+    channel_values = checkpoint_tuple.checkpoint.get("channel_values", {})
+    messages = _unwrap_messages(channel_values.get("messages"))
+    if not messages:
+        return
+
+    total = sum(_estimate_msg_tokens(m) for m in messages)
+    if total <= msg_budget:
+        return  # already fits
+
+    trimmed = list(messages)
+    while len(trimmed) > 2 and sum(_estimate_msg_tokens(m) for m in trimmed) > msg_budget:
+        trimmed.pop(0)
+
+    log.warning(
+        "context trim: %d → %d history messages to fit context_length=%d tokens (budget=%d tokens)",
+        len(messages), len(trimmed), context_length, msg_budget,
+    )
+
+    import copy
+    new_checkpoint = copy.deepcopy(checkpoint_tuple.checkpoint)
+    new_checkpoint["channel_values"]["messages"] = trimmed
+    try:
+        await checkpointer.aput(
+            invoke_config,
+            new_checkpoint,
+            checkpoint_tuple.metadata or {},
+            {},
+        )
+    except Exception as exc:
+        log.warning("could not write trimmed checkpoint: %s", exc)
 
 
 def _looks_like_message(obj) -> bool:
@@ -146,6 +256,16 @@ async def _stream_chat(
             allow_execute=effective_allow_execute,
             api_key=req.api_key,
             openrouter_provider=openrouter_provider,
+            vllm_base_url=req.vllm_url,
+            vllm_tool_calling=req.vllm_tool_calling,
+            vllm_temperature=req.vllm_temperature,
+            vllm_top_k=req.vllm_top_k,
+            vllm_top_p=req.vllm_top_p,
+            vllm_min_p=req.vllm_min_p,
+            vllm_presence_penalty=req.vllm_presence_penalty,
+            vllm_context_length=req.vllm_context_length,
+            thinking_enabled=req.thinking_enabled,
+            thinking_budget=req.thinking_budget,
         )
 
         # Session setup
@@ -275,18 +395,33 @@ async def _stream_chat(
                 yield _sse_event("skill_use", {"name": _si.name, "description": _si.description})
 
         invoke_config = {"configurable": {"thread_id": thread_id}}
-        invoke_input = {"messages": [{"role": "user", "content": req.message}]}
+
+        # Truncate new user message to fit the model's context window.
+        # Uses 4 chars-per-token approximation; _VLLM_OVERHEAD_RESERVE tokens
+        # are reserved for system prompt + tool schemas + model output.
+        message_text = req.message
+        if config.vllm_context_length:
+            max_chars = max(0, (config.vllm_context_length - _VLLM_OVERHEAD_RESERVE) * 4)
+            if len(message_text) > max_chars:
+                log.warning(
+                    "message truncated: original=%d chars, limit=%d chars (context_length=%d tokens)",
+                    len(message_text), max_chars, config.vllm_context_length,
+                )
+                message_text = message_text[:max_chars]
+
+        invoke_input = {"messages": [{"role": "user", "content": message_text}]}
 
         rendered_ids: set[str] = set()
+        _checkpoint_tuple = None
 
-        # Pre-populate with IDs of messages already stored in the checkpoint so
-        # that LangGraph re-emitting history on resume does not replay old output.
+        # Load checkpoint: pre-seed rendered_ids so history is not re-streamed,
+        # then trim old messages if a context_length limit is configured.
         if checkpointer is not None:
             try:
-                checkpoint_tuple = await checkpointer.aget_tuple(invoke_config)
-                if checkpoint_tuple and checkpoint_tuple.checkpoint:
+                _checkpoint_tuple = await checkpointer.aget_tuple(invoke_config)
+                if _checkpoint_tuple and _checkpoint_tuple.checkpoint:
                     existing = _unwrap_messages(
-                        checkpoint_tuple.checkpoint
+                        _checkpoint_tuple.checkpoint
                         .get("channel_values", {})
                         .get("messages")
                     )
@@ -304,8 +439,24 @@ async def _stream_chat(
             except Exception as exc:
                 log.debug("could not pre-seed rendered_ids: %s", exc)
 
-        try:
-            async for chunk in agent.astream(invoke_input, config=invoke_config):
+        # Trim stored history so the full request (history + new message +
+        # system/tools) fits inside the model's context window.
+        if config.vllm_context_length and checkpointer is not None and _checkpoint_tuple is not None:
+            await _trim_checkpoint_to_context(
+                checkpointer, invoke_config, _checkpoint_tuple, config.vllm_context_length,
+            )
+
+        def _is_context_overflow(exc: Exception) -> bool:
+            """Detect vLLM / OpenAI-compatible context-length errors."""
+            msg = str(exc).lower()
+            return any(kw in msg for kw in (
+                "context length", "context window", "input_tokens",
+                "maximum context", "too many tokens", "max_tokens",
+            ))
+
+        async def _run_agent(the_agent):
+            """Async generator that streams SSE events from one agent run."""
+            async for chunk in the_agent.astream(invoke_input, config=invoke_config):
                 for msg in _iter_messages(chunk):
                     msg_id = (
                         msg.get("id") if isinstance(msg, dict)
@@ -331,10 +482,11 @@ async def _stream_chat(
                             else getattr(msg, "tool_calls", [])
                         )
 
-                        thinking = _extract_thinking(content)
-                        if thinking:
-                            log.trace("SSE thinking block (%d chars)", len(thinking))  # type: ignore[attr-defined]
-                            yield _sse_event("thinking", {"text": thinking})
+                        if config.thinking_enabled:
+                            thinking = _extract_thinking(content) or _extract_openrouter_reasoning(msg)
+                            if thinking:
+                                log.trace("SSE thinking block (%d chars)", len(thinking))  # type: ignore[attr-defined]
+                                yield _sse_event("thinking", {"text": thinking})
 
                         for tc in tool_calls or []:
                             name = (
@@ -350,8 +502,16 @@ async def _stream_chat(
 
                         text = _extract_content_text(content)
                         if text:
-                            log.trace("SSE text (%d chars)", len(text))  # type: ignore[attr-defined]
-                            yield _sse_event("text", {"text": text})
+                            inline_thinking, clean_text = _split_inline_thinking(text)
+                            if inline_thinking and config.thinking_enabled:
+                                log.trace("SSE thinking (inline <think> tag, %d chars)", len(inline_thinking))  # type: ignore[attr-defined]
+                                yield _sse_event("thinking", {"text": inline_thinking})
+                            # When thinking is disabled, use clean_text (tags stripped).
+                            # When thinking is enabled, inline_thinking was separated out.
+                            display_text = clean_text if inline_thinking else text
+                            if display_text:
+                                log.trace("SSE text (%d chars)", len(display_text))  # type: ignore[attr-defined]
+                                yield _sse_event("text", {"text": display_text})
 
                     elif msg_type == "tool":
                         name = (
@@ -367,6 +527,48 @@ async def _stream_chat(
                             "tool_result",
                             {"name": name, "result": str(result_content)[:500]},
                         )
+
+        try:
+            # First attempt — normal flow.
+            # If the model rejects the request due to context overflow AND tool
+            # calling is enabled, automatically retry without tool schemas.
+            # Tool definitions alone can be 3000-6000 tokens and are the most
+            # common cause of overflow on small-context models (≤8k).
+            context_overflow_exc: Exception | None = None
+            try:
+                async for event in _run_agent(agent):
+                    yield event
+            except Exception as _stream_exc:
+                if (
+                    config.vllm_context_length
+                    and config.vllm_tool_calling
+                    and _is_context_overflow(_stream_exc)
+                ):
+                    context_overflow_exc = _stream_exc
+                else:
+                    raise
+
+            if context_overflow_exc is not None:
+                log.warning(
+                    "context overflow with tool calling enabled; retrying without tool schemas: %s",
+                    context_overflow_exc,
+                )
+                yield _sse_event(
+                    "text",
+                    {"text": "\n\n*Context window exceeded — retrying without tool calling.*\n\n"},
+                )
+                config.vllm_tool_calling = False
+                rendered_ids.clear()
+                retry_agent = create_agent(
+                    role=role,
+                    config=config,
+                    session=session,
+                    user_id=req.user_id or f"api-{role.value}",
+                    checkpointer=checkpointer,
+                    active_skill=dev_skill,
+                )
+                async for event in _run_agent(retry_agent):
+                    yield event
 
         finally:
             if _checkpointer_ctx is not None:
@@ -418,6 +620,19 @@ async def chat_endpoint(
         "model": req.model or (current_user.model or ""),
         "api_key": req.api_key or (current_user.api_key or ""),
         "openrouter_provider": req.openrouter_provider or (current_user.openrouter_provider or ""),
+        "vllm_url": req.vllm_url or (current_user.vllm_url or ""),
+        # vLLM advanced settings: fall back to saved user profile when not in request
+        "vllm_tool_calling": req.vllm_tool_calling if req.vllm_url else (
+            current_user.vllm_tool_calling if current_user.vllm_tool_calling is not None else True
+        ),
+        "vllm_temperature": req.vllm_temperature if req.vllm_temperature is not None else current_user.vllm_temperature,
+        "vllm_top_k": req.vllm_top_k if req.vllm_top_k is not None else current_user.vllm_top_k,
+        "vllm_top_p": req.vllm_top_p if req.vllm_top_p is not None else current_user.vllm_top_p,
+        "vllm_min_p": req.vllm_min_p if req.vllm_min_p is not None else current_user.vllm_min_p,
+        "vllm_presence_penalty": req.vllm_presence_penalty if req.vllm_presence_penalty is not None else current_user.vllm_presence_penalty,
+        "vllm_context_length": req.vllm_context_length if req.vllm_context_length is not None else current_user.vllm_context_length,
+        "thinking_enabled": req.thinking_enabled if req.thinking_enabled else (current_user.thinking_enabled or False),
+        "thinking_budget": req.thinking_budget if req.thinking_budget != 10000 else (current_user.thinking_budget or 10000),
     })
 
     async def generator():

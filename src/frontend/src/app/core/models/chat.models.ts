@@ -58,4 +58,14 @@ export interface ChatRequest {
   user_id?: string;
   allow_execute?: boolean;
   api_key?: string;
+  vllm_url?: string;
+  vllm_tool_calling?: boolean;
+  vllm_temperature?: number | null;
+  vllm_top_k?: number | null;
+  vllm_top_p?: number | null;
+  vllm_min_p?: number | null;
+  vllm_presence_penalty?: number | null;
+  vllm_context_length?: number | null;
+  thinking_enabled?: boolean;
+  thinking_budget?: number;
 }

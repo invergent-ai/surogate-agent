@@ -82,12 +82,36 @@ def authenticate_user(db: Session, username: str, password: str) -> User | None:
 # ---------------------------------------------------------------------------
 
 def update_user_settings(
-    db: Session, user: User, model: str, api_key: str, openrouter_provider: str = ""
+    db: Session,
+    user: User,
+    model: str,
+    api_key: str,
+    openrouter_provider: str = "",
+    vllm_url: str = "",
+    vllm_tool_calling: bool = True,
+    vllm_temperature=None,
+    vllm_top_k=None,
+    vllm_top_p=None,
+    vllm_min_p=None,
+    vllm_presence_penalty=None,
+    vllm_context_length=None,
+    thinking_enabled: bool = False,
+    thinking_budget: int = 10000,
 ) -> User:
-    """Persist the user's preferred LLM model, API key, and OpenRouter provider."""
+    """Persist the user's preferred LLM model, API key, and vLLM settings."""
     user.model = model.strip()
     user.api_key = api_key.strip()
     user.openrouter_provider = openrouter_provider.strip()
+    user.vllm_url = vllm_url.strip()
+    user.vllm_tool_calling = vllm_tool_calling
+    user.vllm_temperature = vllm_temperature
+    user.vllm_top_k = vllm_top_k
+    user.vllm_top_p = vllm_top_p
+    user.vllm_min_p = vllm_min_p
+    user.vllm_presence_penalty = vllm_presence_penalty
+    user.vllm_context_length = vllm_context_length
+    user.thinking_enabled = thinking_enabled
+    user.thinking_budget = thinking_budget
     db.commit()
     db.refresh(user)
     return user

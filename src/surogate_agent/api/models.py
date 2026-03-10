@@ -24,6 +24,16 @@ class ChatRequest(BaseModel):
     allow_execute: bool = False
     api_key: str = ""  # client-supplied key; used only when server env var is absent
     openrouter_provider: str = ""  # comma-separated OpenRouter provider name(s), e.g. "MiniMax"
+    vllm_url: str = ""  # vLLM / self-hosted OpenAI-compatible endpoint URL
+    vllm_tool_calling: bool = True
+    vllm_temperature: Optional[float] = None
+    vllm_top_k: Optional[int] = None
+    vllm_top_p: Optional[float] = None
+    vllm_min_p: Optional[float] = None
+    vllm_presence_penalty: Optional[float] = None
+    vllm_context_length: Optional[int] = None
+    thinking_enabled: bool = False
+    thinking_budget: int = 10000
 
 
 class SkillCreateRequest(BaseModel):

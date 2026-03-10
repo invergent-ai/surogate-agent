@@ -95,6 +95,32 @@ class AgentConfig:
     # Example: {"order": ["MiniMax"], "allow_fallbacks": False}
     # See https://openrouter.ai/docs for available fields.
     openrouter_provider: dict | None = None
+    # vLLM / self-hosted OpenAI-compatible endpoint base URL, e.g. "http://localhost:8000".
+    # When set, the agent routes to this endpoint instead of cloud providers.
+    # API key is not required (defaults to "EMPTY" for vLLM compatibility).
+    vllm_base_url: str = ""
+    # When True (default), tool definitions are forwarded to vLLM (requires
+    # --enable-auto-tool-choice on the server). When False, tools are stripped
+    # so the model runs as a plain chat endpoint without function calling.
+    vllm_tool_calling: bool = True
+    # Sampling parameters — only applied when vllm_base_url is set.
+    vllm_temperature: Optional[float] = None
+    vllm_top_k: Optional[int] = None
+    vllm_top_p: Optional[float] = None
+    vllm_min_p: Optional[float] = None
+    vllm_presence_penalty: Optional[float] = None
+    # Max context length of the model in tokens. When set, the user message is
+    # truncated (with a ~2000-token overhead reserve) so the request fits in the
+    # model's context window.  Uses a 4 chars-per-token approximation.
+    vllm_context_length: Optional[int] = None
+    # Thinking / extended reasoning.  When True, extended thinking is requested
+    # from the model where the API supports it:
+    #   - Claude  → thinking={"type":"enabled","budget_tokens":thinking_budget}
+    #   - vLLM    → enable_thinking=True injected into the request body
+    #   - OpenRouter → include=["reasoning"] injected into the request body
+    #   - OpenAI  → no effect (Chat Completions API does not expose reasoning)
+    thinking_enabled: bool = False
+    thinking_budget: int = 10000  # token budget; primarily used by Claude
 
     def __post_init__(self) -> None:
         # Always include the bundled builtin skills directory.

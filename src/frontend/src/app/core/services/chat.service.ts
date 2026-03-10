@@ -21,11 +21,21 @@ export class ChatService {
           const headers: Record<string, string> = { 'Content-Type': 'application/json' };
           if (token) headers['Authorization'] = `Bearer ${token}`;
 
-          // Merge model and api_key from settings (caller values take precedence)
+          // Merge model, api_key, and vLLM settings from saved settings (caller values take precedence)
           const payload: ChatRequest = {
             ...req,
-            model:   req.model   || this.settings.model(),
-            api_key: req.api_key || this.settings.apiKey(),
+            model:    req.model    || this.settings.model(),
+            api_key:  req.api_key  || this.settings.apiKey(),
+            vllm_url: req.vllm_url || this.settings.vllmUrl(),
+            vllm_tool_calling:     this.settings.vllmToolCalling(),
+            vllm_temperature:      this.settings.vllmTemperature(),
+            vllm_top_k:            this.settings.vllmTopK(),
+            vllm_top_p:            this.settings.vllmTopP(),
+            vllm_min_p:            this.settings.vllmMinP(),
+            vllm_presence_penalty: this.settings.vllmPresencePenalty(),
+            vllm_context_length:   this.settings.vllmContextLength(),
+            thinking_enabled:      this.settings.thinkingEnabled(),
+            thinking_budget:       this.settings.thinkingBudget(),
           };
 
           const resp = await fetch(`${this.config.apiUrl}/chat`, {

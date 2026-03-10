@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Boolean, DateTime, String, Text
+from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from surogate_agent.auth.database import Base
@@ -35,6 +35,24 @@ class User(Base):
     openrouter_provider: Mapped[Optional[str]] = mapped_column(
         String(255), nullable=True, default="", server_default=""
     )
+    # vLLM / self-hosted OpenAI-compatible endpoint URL.
+    # When set, this endpoint is used instead of the cloud providers.
+    # API key is optional (defaults to "EMPTY" if not provided).
+    vllm_url: Mapped[Optional[str]] = mapped_column(
+        String(2048), nullable=True, default="", server_default=""
+    )
+    # vLLM advanced settings
+    vllm_tool_calling: Mapped[Optional[bool]] = mapped_column(
+        Boolean, nullable=True, default=True, server_default="1"
+    )
+    vllm_temperature: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    vllm_top_k: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    vllm_top_p: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    vllm_min_p: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    vllm_presence_penalty: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    vllm_context_length: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    thinking_enabled: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True, default=False, server_default="0")
+    thinking_budget: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, default=10000, server_default="10000")
 
     def __repr__(self) -> str:
         return f"<User id={self.id} username={self.username!r} role={self.role!r}>"

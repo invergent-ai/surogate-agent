@@ -4,7 +4,11 @@
     class="flex items-center gap-1 text-xs text-gray-400 dark:text-zinc-500 italic hover:text-gray-500 dark:hover:text-zinc-400 transition-colors"
   >
     <span class="text-[10px]">{{ collapsed() ? '▶' : '▼' }}</span>
-    <span>Thinking…</span>
+    @if (collapsed()) {
+      <span class="truncate max-w-xs">Thinking — {{ preview }}</span>
+    } @else {
+      <span>Thinking…</span>
+    }
   </button>
   @if (!collapsed()) {
     <p class="mt-1 text-sm text-gray-400 dark:text-zinc-500 italic whitespace-pre-wrap leading-relaxed">{{ block.text }}</p>

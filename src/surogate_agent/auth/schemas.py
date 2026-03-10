@@ -58,6 +58,16 @@ class UserSettingsUpdate(BaseModel):
     model: str
     api_key: str
     openrouter_provider: str = ""
+    vllm_url: str = ""
+    vllm_tool_calling: bool = True
+    vllm_temperature: Optional[float] = None
+    vllm_top_k: Optional[int] = None
+    vllm_top_p: Optional[float] = None
+    vllm_min_p: Optional[float] = None
+    vllm_presence_penalty: Optional[float] = None
+    vllm_context_length: Optional[int] = None
+    thinking_enabled: bool = False
+    thinking_budget: int = 10000
 
 
 class UserResponse(BaseModel):
@@ -73,8 +83,23 @@ class UserResponse(BaseModel):
     model: str = ""
     api_key: str = ""
     openrouter_provider: str = ""
+    vllm_url: str = ""
+    vllm_tool_calling: bool = True
+    vllm_temperature: Optional[float] = None
+    vllm_top_k: Optional[int] = None
+    vllm_top_p: Optional[float] = None
+    vllm_min_p: Optional[float] = None
+    vllm_presence_penalty: Optional[float] = None
+    vllm_context_length: Optional[int] = None
+    thinking_enabled: bool = False
+    thinking_budget: int = 10000
 
-    @field_validator("model", "api_key", "openrouter_provider", mode="before")
+    @field_validator("model", "api_key", "openrouter_provider", "vllm_url", mode="before")
     @classmethod
     def _none_to_empty(cls, v: Optional[str]) -> str:
         return v or ""
+
+    @field_validator("vllm_tool_calling", mode="before")
+    @classmethod
+    def _none_to_true(cls, v) -> bool:
+        return v if v is not None else True

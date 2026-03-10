@@ -37,7 +37,462 @@ def _import_deepagents():
         ) from exc
 
 
-def _build_llm(model: str, api_key: str = "", openrouter_provider: dict | None = None):
+def _convert_tools_to_responses_format(tools: list) -> list:
+    """Convert LangChain tools to OpenAI Responses API tool format.
+
+    Chat Completions wraps function schemas as::
+
+        {"type": "function", "function": {"name": ..., "description": ..., "parameters": ...}}
+
+    The Responses API flattens this to::
+
+        {"type": "function", "name": ..., "description": ..., "parameters": ...}
+    """
+    converted = []
+    for tool in tools:
+        if isinstance(tool, dict):
+            fn = tool.get("function", tool)
+            converted.append({
+                "type": "function",
+                "name": fn.get("name", ""),
+                "description": fn.get("description", ""),
+                "parameters": fn.get("parameters", {}),
+            })
+        elif hasattr(tool, "name"):
+            schema: dict = {}
+            if hasattr(tool, "args_schema") and tool.args_schema:
+                try:
+                    schema = tool.args_schema.model_json_schema()
+                except Exception:
+                    pass
+            converted.append({
+                "type": "function",
+                "name": tool.name,
+                "description": getattr(tool, "description", ""),
+                "parameters": schema,
+            })
+    return converted
+
+
+class _OpenAIResponsesChatModel:
+    """Minimal LangChain-compatible chat model backed by the OpenAI Responses API.
+
+    The Responses API (``/v1/responses``) is the only OpenAI endpoint that
+    returns reasoning summaries alongside the assistant reply.  LangChain's
+    ``ChatOpenAI`` targets Chat Completions and cannot surface reasoning.
+
+    This class implements just enough of the LangChain ``BaseChatModel``
+    interface for deepagents / LangGraph:
+
+    - ``ainvoke`` / ``astream`` (async, used by FastAPI)
+    - ``invoke`` / ``stream`` (sync fallback)
+    - ``bind_tools`` (called by deepagents to attach agent tools)
+
+    Reasoning summaries are placed in ``AIMessage.additional_kwargs["reasoning"]``
+    so ``_extract_openrouter_reasoning()`` in chat.py picks them up and emits a
+    ``thinking`` SSE event — no extra changes needed there.
+    """
+
+    # Attributes inspected by deepagents / langchain middleware
+    profile = None
+    _llm_type = "openai-responses"
+    model_name: str = ""
+
+    def __init__(
+        self,
+        model_name: str,
+        api_key: str,
+        reasoning_effort: str = "medium",
+        bound_tools: list | None = None,
+    ) -> None:
+        self._model_name = model_name
+        self.model_name = model_name  # also set the class-level attr as instance attr
+        self._api_key = api_key
+        self._reasoning_effort = reasoning_effort
+        self._bound_tools: list = bound_tools or []
+
+    # ------------------------------------------------------------------
+    # LangChain compatibility shims
+    # ------------------------------------------------------------------
+
+    def bind_tools(self, tools, tool_choice=None, **kwargs) -> "_OpenAIResponsesChatModel":
+        return _OpenAIResponsesChatModel(
+            model_name=self._model_name,
+            api_key=self._api_key,
+            reasoning_effort=self._reasoning_effort,
+            bound_tools=_convert_tools_to_responses_format(tools),
+        )
+
+    def bind(self, **kwargs) -> "_OpenAIResponsesChatModel":
+        return self  # no-op for extra bindings deepagents may add
+
+    # LangGraph / deepagents inspect .bound on RunnableBinding; not needed here
+    # but some integrations call .configurable_fields() — provide a no-op.
+    def configurable_fields(self, **kwargs):
+        return self
+
+    # ------------------------------------------------------------------
+    # Message conversion helpers
+    # ------------------------------------------------------------------
+
+    def _to_responses_input(self, messages: list) -> list:
+        """Convert LangChain messages to Responses API ``input`` items."""
+        import json as _json
+        from langchain_core.messages import (
+            AIMessage, HumanMessage, SystemMessage, ToolMessage,
+        )
+
+        items: list = []
+        for msg in messages:
+            if isinstance(msg, dict):
+                items.append({"role": msg.get("role", "user"), "content": msg.get("content", "")})
+            elif isinstance(msg, SystemMessage):
+                items.append({"role": "system", "content": str(msg.content)})
+            elif isinstance(msg, HumanMessage):
+                items.append({"role": "user", "content": str(msg.content)})
+            elif isinstance(msg, AIMessage):
+                if msg.tool_calls:
+                    if msg.content:
+                        items.append({"role": "assistant", "content": str(msg.content)})
+                    for tc in msg.tool_calls:
+                        items.append({
+                            "type": "function_call",
+                            "call_id": tc.get("id") or tc.get("name", ""),
+                            "name": tc.get("name", ""),
+                            "arguments": _json.dumps(tc.get("args", {})),
+                        })
+                else:
+                    items.append({"role": "assistant", "content": str(msg.content)})
+            elif isinstance(msg, ToolMessage):
+                items.append({
+                    "type": "function_call_output",
+                    "call_id": getattr(msg, "tool_call_id", "") or "",
+                    "output": str(msg.content),
+                })
+            else:
+                # Generic fallback
+                type_to_role = {"human": "user", "ai": "assistant", "system": "system"}
+                role = type_to_role.get(getattr(msg, "type", ""), "user")
+                items.append({"role": role, "content": str(getattr(msg, "content", ""))})
+        return items
+
+    def _parse_response(self, response) -> "AIMessage":
+        """Parse an OpenAI Responses API response into a LangChain AIMessage."""
+        import json as _json
+        from langchain_core.messages import AIMessage
+
+        text = ""
+        reasoning_parts: list[str] = []
+        tool_calls: list[dict] = []
+
+        for item in response.output:
+            item_type = getattr(item, "type", None)
+
+            if item_type == "reasoning":
+                for s in (getattr(item, "summary", []) or []):
+                    chunk = s.text if hasattr(s, "text") else (s if isinstance(s, str) else "")
+                    if chunk:
+                        reasoning_parts.append(chunk)
+
+            elif item_type == "message":
+                for block in (getattr(item, "content", []) or []):
+                    text += block.text if hasattr(block, "text") else block.get("text", "")
+
+            elif item_type == "function_call":
+                try:
+                    args = _json.loads(getattr(item, "arguments", "{}") or "{}")
+                except (ValueError, TypeError):
+                    args = {}
+                tool_calls.append({
+                    "id": getattr(item, "call_id", "") or getattr(item, "id", ""),
+                    "name": getattr(item, "name", ""),
+                    "args": args,
+                    "type": "tool_call",
+                })
+
+        additional_kwargs: dict = {}
+        if reasoning_parts:
+            additional_kwargs["reasoning"] = "\n\n".join(reasoning_parts)
+
+        return AIMessage(
+            content=text,
+            tool_calls=tool_calls,
+            additional_kwargs=additional_kwargs,
+        )
+
+    # ------------------------------------------------------------------
+    # Core invocation (sync + async)
+    # ------------------------------------------------------------------
+
+    def _build_create_kwargs(self, messages: list) -> dict:
+        kw: dict = {
+            "model": self._model_name,
+            "input": self._to_responses_input(messages),
+            "reasoning": {"effort": self._reasoning_effort, "summary": "auto"},
+        }
+        if self._bound_tools:
+            kw["tools"] = self._bound_tools
+        return kw
+
+    def invoke(self, input, config=None, **kwargs):
+        from openai import OpenAI
+        from langchain_core.outputs import ChatGeneration, ChatResult
+
+        messages = input if isinstance(input, list) else input.get("messages", [])
+        client = OpenAI(api_key=self._api_key)
+        response = client.responses.create(**self._build_create_kwargs(messages))
+        msg = self._parse_response(response)
+        return msg
+
+    async def ainvoke(self, input, config=None, **kwargs):
+        from openai import AsyncOpenAI
+
+        messages = input if isinstance(input, list) else input.get("messages", [])
+        client = AsyncOpenAI(api_key=self._api_key)
+        response = await client.responses.create(**self._build_create_kwargs(messages))
+        return self._parse_response(response)
+
+    def stream(self, input, config=None, **kwargs):
+        yield self.invoke(input, config, **kwargs)
+
+    async def astream(self, input, config=None, **kwargs):
+        yield await self.ainvoke(input, config, **kwargs)
+
+    # deepagents / LangGraph call these on the runnable
+    def with_config(self, config=None, **kwargs):
+        return self
+
+    def with_retry(self, **kwargs):
+        return self
+
+
+class _OpenRouterThinkingChatModel:
+    """Minimal LangChain-compatible chat model for OpenRouter with thinking support.
+
+    LangChain's ``ChatOpenAI`` explicitly drops non-standard response fields such
+    as ``reasoning_content`` returned by OpenRouter providers (e.g. MiniMax M2.5,
+    DeepSeek R1).  This class bypasses LangChain and calls the raw OpenAI-compatible
+    Chat Completions API directly via ``openai.AsyncOpenAI``, reading ``model_extra``
+    on the response message to surface the reasoning content.
+
+    Reasoning content is placed in ``AIMessage.additional_kwargs["reasoning"]``
+    so ``_extract_openrouter_reasoning()`` in chat.py picks it up and emits a
+    ``thinking`` SSE event.
+    """
+
+    profile = None
+    _llm_type = "openrouter-thinking"
+    model_name: str = ""
+
+    def __init__(
+        self,
+        model_name: str,
+        api_key: str,
+        openrouter_provider: dict | None = None,
+        bound_tools: list | None = None,
+    ) -> None:
+        self._model_name = model_name
+        self.model_name = model_name
+        self._api_key = api_key
+        self._openrouter_provider = openrouter_provider
+        self._bound_tools: list = bound_tools or []
+
+    # ------------------------------------------------------------------
+    # LangChain compatibility shims
+    # ------------------------------------------------------------------
+
+    def bind_tools(self, tools, tool_choice=None, **kwargs) -> "_OpenRouterThinkingChatModel":
+        import json as _json
+        converted = []
+        for tool in tools:
+            if isinstance(tool, dict):
+                converted.append(tool)
+            elif hasattr(tool, "name"):
+                schema: dict = {}
+                if hasattr(tool, "args_schema") and tool.args_schema:
+                    try:
+                        schema = tool.args_schema.model_json_schema()
+                    except Exception:
+                        pass
+                converted.append({
+                    "type": "function",
+                    "function": {
+                        "name": tool.name,
+                        "description": getattr(tool, "description", ""),
+                        "parameters": schema,
+                    },
+                })
+        return _OpenRouterThinkingChatModel(
+            model_name=self._model_name,
+            api_key=self._api_key,
+            openrouter_provider=self._openrouter_provider,
+            bound_tools=converted,
+        )
+
+    def bind(self, **kwargs) -> "_OpenRouterThinkingChatModel":
+        return self
+
+    def configurable_fields(self, **kwargs):
+        return self
+
+    def with_config(self, config=None, **kwargs):
+        return self
+
+    def with_retry(self, **kwargs):
+        return self
+
+    # ------------------------------------------------------------------
+    # Message conversion helpers
+    # ------------------------------------------------------------------
+
+    def _to_openai_messages(self, messages: list) -> list:
+        """Convert LangChain messages to OpenAI Chat Completions format."""
+        import json as _json
+        from langchain_core.messages import (
+            AIMessage, HumanMessage, SystemMessage, ToolMessage,
+        )
+
+        result: list = []
+        for msg in messages:
+            if isinstance(msg, dict):
+                result.append(msg)
+            elif isinstance(msg, SystemMessage):
+                result.append({"role": "system", "content": str(msg.content)})
+            elif isinstance(msg, HumanMessage):
+                result.append({"role": "user", "content": str(msg.content)})
+            elif isinstance(msg, AIMessage):
+                item: dict = {"role": "assistant", "content": str(msg.content) if msg.content else ""}
+                if msg.tool_calls:
+                    item["tool_calls"] = [
+                        {
+                            "id": tc.get("id", tc.get("name", "")),
+                            "type": "function",
+                            "function": {
+                                "name": tc.get("name", ""),
+                                "arguments": _json.dumps(tc.get("args", {})),
+                            },
+                        }
+                        for tc in msg.tool_calls
+                    ]
+                result.append(item)
+            elif isinstance(msg, ToolMessage):
+                result.append({
+                    "role": "tool",
+                    "tool_call_id": getattr(msg, "tool_call_id", "") or "",
+                    "content": str(msg.content),
+                })
+            else:
+                type_to_role = {"human": "user", "ai": "assistant", "system": "system"}
+                role = type_to_role.get(getattr(msg, "type", ""), "user")
+                result.append({"role": role, "content": str(getattr(msg, "content", ""))})
+        return result
+
+    def _parse_completion(self, response) -> "AIMessage":
+        """Parse an OpenAI Chat Completions response into a LangChain AIMessage."""
+        import json as _json
+        from langchain_core.messages import AIMessage
+
+        choice = response.choices[0]
+        msg = choice.message
+
+        text = msg.content or ""
+        tool_calls: list[dict] = []
+        if getattr(msg, "tool_calls", None):
+            for tc in msg.tool_calls:
+                try:
+                    args = _json.loads(tc.function.arguments or "{}")
+                except (ValueError, TypeError):
+                    args = {}
+                tool_calls.append({
+                    "id": tc.id or tc.function.name,
+                    "name": tc.function.name,
+                    "args": args,
+                    "type": "tool_call",
+                })
+
+        # Extract reasoning from non-standard fields that LangChain would drop.
+        # OpenRouter providers return reasoning_content or reasoning on the message.
+        reasoning = ""
+        if hasattr(msg, "reasoning_content") and msg.reasoning_content:
+            reasoning = msg.reasoning_content
+        elif hasattr(msg, "reasoning") and msg.reasoning:
+            reasoning = msg.reasoning
+        # Also check model_extra (Pydantic v2 non-declared fields)
+        if not reasoning and hasattr(msg, "model_extra") and msg.model_extra:
+            reasoning = (
+                msg.model_extra.get("reasoning_content")
+                or msg.model_extra.get("reasoning")
+                or ""
+            )
+
+        additional_kwargs: dict = {}
+        if reasoning:
+            additional_kwargs["reasoning"] = reasoning
+
+        return AIMessage(
+            content=text,
+            tool_calls=tool_calls,
+            additional_kwargs=additional_kwargs,
+        )
+
+    # ------------------------------------------------------------------
+    # Core invocation (sync + async)
+    # ------------------------------------------------------------------
+
+    def _build_kwargs(self, messages: list) -> dict:
+        extra_body: dict = {"include": ["reasoning"]}
+        if self._openrouter_provider:
+            extra_body["provider"] = self._openrouter_provider
+        kw: dict = {
+            "model": self._model_name,
+            "messages": self._to_openai_messages(messages),
+            "extra_body": extra_body,
+        }
+        if self._bound_tools:
+            kw["tools"] = self._bound_tools
+        return kw
+
+    def invoke(self, input, config=None, **kwargs):
+        from openai import OpenAI
+        messages = input if isinstance(input, list) else input.get("messages", [])
+        client = OpenAI(
+            api_key=self._api_key,
+            base_url="https://openrouter.ai/api/v1",
+        )
+        response = client.chat.completions.create(**self._build_kwargs(messages))
+        return self._parse_completion(response)
+
+    async def ainvoke(self, input, config=None, **kwargs):
+        from openai import AsyncOpenAI
+        messages = input if isinstance(input, list) else input.get("messages", [])
+        client = AsyncOpenAI(
+            api_key=self._api_key,
+            base_url="https://openrouter.ai/api/v1",
+        )
+        response = await client.chat.completions.create(**self._build_kwargs(messages))
+        return self._parse_completion(response)
+
+    def stream(self, input, config=None, **kwargs):
+        yield self.invoke(input, config, **kwargs)
+
+    async def astream(self, input, config=None, **kwargs):
+        yield await self.ainvoke(input, config, **kwargs)
+
+
+def _build_llm(
+    model: str,
+    api_key: str = "",
+    openrouter_provider: dict | None = None,
+    vllm_base_url: str = "",
+    vllm_tool_calling: bool = True,
+    vllm_temperature: Optional[float] = None,
+    vllm_top_k: Optional[int] = None,
+    vllm_top_p: Optional[float] = None,
+    vllm_min_p: Optional[float] = None,
+    vllm_presence_penalty: Optional[float] = None,
+    thinking_enabled: bool = False,
+    thinking_budget: int = 10000,
+):
     """Instantiate a LangChain chat model from a model-string shorthand.
 
     Parameters
@@ -61,7 +516,128 @@ def _build_llm(model: str, api_key: str = "", openrouter_provider: dict | None =
         (``"/"`` in the model string).
         Example: ``{"order": ["MiniMax"], "allow_fallbacks": False}``
     """
-    log.debug("building LLM: model=%s has_key=%s", model, bool(api_key))
+    log.debug(
+        "building LLM: model=%s has_key=%s vllm=%s tool_calling=%s",
+        model, bool(api_key), bool(vllm_base_url), vllm_tool_calling,
+    )
+    if vllm_base_url:
+        # vLLM / self-hosted OpenAI-compatible endpoint.
+        # API key is optional; vLLM accepts any non-empty string.
+        resolved_key = api_key or "EMPTY"
+        base = vllm_base_url.rstrip("/")
+        # Append /v1 if the URL doesn't already end with it.
+        if not base.endswith("/v1"):
+            base = f"{base}/v1"
+        try:
+            import json as _json
+            import httpx
+            from langchain_openai import ChatOpenAI  # type: ignore
+            log.debug("instantiated ChatOpenAI (vLLM): base_url=%s model=%s", base, model)
+
+            _VLLM_TOOL_FLAG_MSG = (
+                "vLLM tool-calling is not enabled on this server. "
+                "Start vLLM with --enable-auto-tool-choice and "
+                "--tool-call-parser <parser> (e.g. mistral, hermes, llama3_json) "
+                "to use agent tool-calling. Without those flags, disable "
+                "\"Enable tool calling\" in Settings to use plain chat mode."
+            )
+
+            # Extra params to inject into every vLLM request body.
+            _extra_body: dict = {}
+            if vllm_top_k is not None:
+                _extra_body["top_k"] = vllm_top_k
+            if vllm_min_p is not None:
+                _extra_body["min_p"] = vllm_min_p
+            # Always send the flag explicitly so thinking-capable models (e.g. Qwen3)
+            # don't default to thinking mode when the user has disabled it.
+            _extra_body["enable_thinking"] = thinking_enabled
+
+            _strip_tools = not vllm_tool_calling
+
+            def _patch_vllm_request(request: httpx.Request) -> httpx.Request:
+                """Patch vLLM requests: optionally strip tools, inject extra params."""
+                if not request.headers.get("content-type", "").startswith("application/json"):
+                    return request
+                try:
+                    body = _json.loads(request.content)
+                    changed = False
+                    if _strip_tools:
+                        for key in ("tool_choice", "tools"):
+                            if key in body:
+                                body.pop(key)
+                                changed = True
+                    for k, v in _extra_body.items():
+                        body[k] = v
+                        changed = True
+                    if not changed:
+                        return request
+                    new_content = _json.dumps(body).encode()
+                    # Exclude content-length so httpx recalculates it for the new body.
+                    headers = {
+                        k: v for k, v in request.headers.items()
+                        if k.lower() != "content-length"
+                    }
+                    return httpx.Request(
+                        method=request.method,
+                        url=request.url,
+                        headers=headers,
+                        content=new_content,
+                    )
+                except Exception:
+                    return request
+
+            def _check_vllm_response(response: httpx.Response) -> httpx.Response:
+                """Replace the cryptic vLLM tool-flag error with a clear message."""
+                if response.status_code == 400:
+                    try:
+                        body = _json.loads(response.content)
+                        msg = body.get("error", {}).get("message", "")
+                        if "enable-auto-tool-choice" in msg:
+                            body["error"]["message"] = _VLLM_TOOL_FLAG_MSG
+                            return httpx.Response(
+                                400,
+                                content=_json.dumps(body).encode(),
+                                headers=response.headers,
+                            )
+                    except Exception:
+                        pass
+                return response
+
+            class _VllmAsyncTransport(httpx.AsyncHTTPTransport):
+                async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+                    resp = await super().handle_async_request(_patch_vllm_request(request))
+                    return _check_vllm_response(resp)
+
+            class _VllmSyncTransport(httpx.HTTPTransport):
+                def handle_request(self, request: httpx.Request) -> httpx.Response:
+                    resp = super().handle_request(_patch_vllm_request(request))
+                    return _check_vllm_response(resp)
+
+            # Use verify=False (curl -k) for self-signed / private CA certs.
+            http_client = httpx.Client(transport=_VllmSyncTransport(verify=False), verify=False)
+            async_http_client = httpx.AsyncClient(transport=_VllmAsyncTransport(verify=False), verify=False)
+
+            # Standard sampling params supported directly by ChatOpenAI.
+            llm_kwargs: dict = {}
+            if vllm_temperature is not None:
+                llm_kwargs["temperature"] = vllm_temperature
+            if vllm_top_p is not None:
+                llm_kwargs["top_p"] = vllm_top_p
+            if vllm_presence_penalty is not None:
+                llm_kwargs["presence_penalty"] = vllm_presence_penalty
+
+            return ChatOpenAI(
+                model=model,
+                api_key=resolved_key,
+                base_url=base,
+                http_client=http_client,
+                http_async_client=async_http_client,
+                **llm_kwargs,
+            )
+        except ImportError:
+            raise ImportError(
+                "Install langchain-openai: pip install surogate-agent"
+            )
     if model.startswith("claude"):
         resolved_key = api_key or os.environ.get("ANTHROPIC_API_KEY", "")
         if not resolved_key:
@@ -71,18 +647,34 @@ def _build_llm(model: str, api_key: str = "", openrouter_provider: dict | None =
             )
         try:
             from langchain_anthropic import ChatAnthropic  # type: ignore
+            if thinking_enabled:
+                log.debug("instantiated ChatAnthropic (extended thinking, budget=%d): %s", thinking_budget, model)
+                return ChatAnthropic(
+                    model=model,
+                    api_key=resolved_key,
+                    temperature=1,  # required for extended thinking
+                    max_tokens=thinking_budget + 4096,
+                    model_kwargs={"thinking": {"type": "enabled", "budget_tokens": thinking_budget}},
+                )
             log.debug("instantiated ChatAnthropic: %s", model)
             return ChatAnthropic(model=model, api_key=resolved_key)
         except ImportError:
             raise ImportError(
                 "Install langchain-anthropic: pip install surogate-agent"
             )
-    if model.startswith("gpt") or model.startswith("o1") or model.startswith("o3"):
+    if model.startswith("gpt") or model.startswith("o1") or model.startswith("o3") or model.startswith("o4"):
         resolved_key = api_key or os.environ.get("OPENAI_API_KEY", "")
         if not resolved_key:
             raise ValueError(
                 "OPENAI_API_KEY is not configured. Set it as a server "
                 "environment variable, or enter your API key in Settings."
+            )
+        if thinking_enabled:
+            log.debug("instantiated _OpenAIResponsesChatModel (reasoning summaries): %s", model)
+            return _OpenAIResponsesChatModel(
+                model_name=model,
+                api_key=resolved_key,
+                reasoning_effort="medium",
             )
         try:
             from langchain_openai import ChatOpenAI  # type: ignore
@@ -103,6 +695,16 @@ def _build_llm(model: str, api_key: str = "", openrouter_provider: dict | None =
                 "OPENROUTER_API_KEY is not configured. Set it as a server "
                 "environment variable, or enter your API key in Settings."
             )
+        if thinking_enabled:
+            log.debug(
+                "instantiated _OpenRouterThinkingChatModel (reasoning): %s provider=%s",
+                model, openrouter_provider,
+            )
+            return _OpenRouterThinkingChatModel(
+                model_name=model,
+                api_key=resolved_key,
+                openrouter_provider=openrouter_provider,
+            )
         try:
             from langchain_openai import ChatOpenAI  # type: ignore
             log.debug(
@@ -115,10 +717,6 @@ def _build_llm(model: str, api_key: str = "", openrouter_provider: dict | None =
                 base_url="https://openrouter.ai/api/v1",
             )
             if openrouter_provider:
-                # `provider` is an OpenRouter-specific request body field.
-                # It must be passed via `extra_body` so the OpenAI client
-                # merges it into the JSON payload rather than treating it
-                # as a Python kwarg (which raises TypeError).
                 kwargs["model_kwargs"] = {"extra_body": {"provider": openrouter_provider}}
             return ChatOpenAI(**kwargs)
         except ImportError:
@@ -213,7 +811,20 @@ def create_agent(
     log.debug("total skill sources: %d — %s", len(skill_sources), skill_sources)
 
     create_deep_agent = _import_deepagents()
-    llm = _build_llm(config.model, api_key=config.api_key, openrouter_provider=config.openrouter_provider)
+    llm = _build_llm(
+        config.model,
+        api_key=config.api_key,
+        openrouter_provider=config.openrouter_provider,
+        vllm_base_url=config.vllm_base_url,
+        vllm_tool_calling=config.vllm_tool_calling,
+        vllm_temperature=config.vllm_temperature,
+        vllm_top_k=config.vllm_top_k,
+        vllm_top_p=config.vllm_top_p,
+        vllm_min_p=config.vllm_min_p,
+        vllm_presence_penalty=config.vllm_presence_penalty,
+        thinking_enabled=config.thinking_enabled,
+        thinking_budget=config.thinking_budget,
+    )
 
     # Choose backend based on whether shell execution is needed.
     #

@@ -12,4 +12,9 @@ export class ThinkingBlockComponent {
   @Input({ required: true }) block!: ThinkingBlock;
   collapsed = signal(true);
   toggle() { this.collapsed.update(v => !v); }
+
+  get preview(): string {
+    const text = this.block.text?.trim() ?? '';
+    return text.length > 80 ? text.slice(0, 80) + '…' : text;
+  }
 }

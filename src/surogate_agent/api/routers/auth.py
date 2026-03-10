@@ -105,5 +105,13 @@ def update_me(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> User:
-    """Update the current user's model, API key, and OpenRouter provider."""
-    return update_user_settings(db, current_user, body.model, body.api_key, body.openrouter_provider)
+    """Update the current user's model, API key, OpenRouter provider, and vLLM URL."""
+    return update_user_settings(
+        db, current_user,
+        body.model, body.api_key, body.openrouter_provider, body.vllm_url,
+        body.vllm_tool_calling,
+        body.vllm_temperature, body.vllm_top_k, body.vllm_top_p,
+        body.vllm_min_p, body.vllm_presence_penalty,
+        body.vllm_context_length,
+        body.thinking_enabled, body.thinking_budget,
+    )

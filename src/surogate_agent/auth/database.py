@@ -77,6 +77,26 @@ def _migrate_users_table() -> None:
             conn.execute(text("ALTER TABLE users ADD COLUMN api_key VARCHAR(1000) DEFAULT ''"))
         if "openrouter_provider" not in cols:
             conn.execute(text("ALTER TABLE users ADD COLUMN openrouter_provider VARCHAR(255) DEFAULT ''"))
+        if "vllm_url" not in cols:
+            conn.execute(text("ALTER TABLE users ADD COLUMN vllm_url VARCHAR(2048) DEFAULT ''"))
+        if "vllm_tool_calling" not in cols:
+            conn.execute(text("ALTER TABLE users ADD COLUMN vllm_tool_calling BOOLEAN DEFAULT 1"))
+        if "vllm_temperature" not in cols:
+            conn.execute(text("ALTER TABLE users ADD COLUMN vllm_temperature FLOAT"))
+        if "vllm_top_k" not in cols:
+            conn.execute(text("ALTER TABLE users ADD COLUMN vllm_top_k INTEGER"))
+        if "vllm_top_p" not in cols:
+            conn.execute(text("ALTER TABLE users ADD COLUMN vllm_top_p FLOAT"))
+        if "vllm_min_p" not in cols:
+            conn.execute(text("ALTER TABLE users ADD COLUMN vllm_min_p FLOAT"))
+        if "vllm_presence_penalty" not in cols:
+            conn.execute(text("ALTER TABLE users ADD COLUMN vllm_presence_penalty FLOAT"))
+        if "vllm_context_length" not in cols:
+            conn.execute(text("ALTER TABLE users ADD COLUMN vllm_context_length INTEGER"))
+        if "thinking_enabled" not in cols:
+            conn.execute(text("ALTER TABLE users ADD COLUMN thinking_enabled BOOLEAN DEFAULT 0"))
+        if "thinking_budget" not in cols:
+            conn.execute(text("ALTER TABLE users ADD COLUMN thinking_budget INTEGER DEFAULT 10000"))
 
 
 def create_tables() -> None:
