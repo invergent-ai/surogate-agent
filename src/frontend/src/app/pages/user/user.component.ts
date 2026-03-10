@@ -220,7 +220,9 @@ export class UserComponent implements OnInit, AfterViewInit {
     this.sessionsService.clearHistory(sid).subscribe({
       next: () => {
         this.clearingHistory.set(false);
-        if (this.chatComp) this.chatComp.clearMessages();
+        // Restore to empty while keeping the same session ID so existing
+        // workspace files remain accessible (don't generate a new session folder).
+        if (this.chatComp) this.chatComp.restoreSession([], sid);
       },
       error: () => this.clearingHistory.set(false),
     });

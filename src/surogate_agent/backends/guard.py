@@ -222,6 +222,7 @@ def make_guarded_local_shell_backend(
 
     class _GuardedLocalShellBackend(PermissionGuardMixin, LocalShellBackend):
         def execute(self, command: str, **kw):  # type: ignore[override]
+            from deepagents.backends.protocol import ExecuteResponse
             cmd = command if isinstance(command, str) else str(command)
             has_destructive = any(tok in cmd for tok in _DESTRUCTIVE)
             if has_destructive:
@@ -231,10 +232,14 @@ def make_guarded_local_shell_backend(
                         log.warning(
                             "execute blocked: destructive command targets ro path %s", base_str
                         )
-                        return (
-                            f"Error: Shell execution blocked — the command targets a "
-                            f"read-only path '{base_str}'. Skill and builtin files must "
-                            "not be modified or deleted."
+                        return ExecuteResponse(
+                            output=(
+                                f"Error: Shell execution blocked — the command targets a "
+                                f"read-only path '{base_str}'. Skill and builtin files must "
+                                "not be modified or deleted."
+                            ),
+                            exit_code=1,
+                            truncated=False,
                         )
             return super().execute(command, **kw)  # type: ignore[misc]
 
