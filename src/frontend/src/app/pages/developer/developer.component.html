@@ -238,7 +238,7 @@
         </div>
 
         <!-- Workspace + Test panels -->
-        <div class="flex-1 min-h-0 overflow-hidden flex flex-col p-3 gap-3">
+        <div class="flex-1 min-h-0 overflow-y-auto flex flex-col p-3 gap-3">
           <app-workspace-panel [skill]="activeSkill()" (fileOpened)="expandRightPanel()" />
           <app-user-test-panel
             (settingsRequired)="settingsOpen.set(true)"
