@@ -44,7 +44,7 @@ export class WorkspacePanelComponent implements OnInit {
 
   /** Human-readable label for a folder name. */
   folderLabel(folder: string): string {
-    return folder === '_root' ? '(workspace root)' : folder;
+    return folder === '_root' ? '(root)' : folder;
   }
 
   ngOnInit() {
