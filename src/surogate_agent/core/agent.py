@@ -40,6 +40,12 @@ def _import_deepagents():
 def _convert_tools_to_responses_format(tools: list) -> list:
     """Convert LangChain tools to OpenAI Responses API tool format.
 
+    Uses ``convert_to_openai_tool`` (the same path ``ChatOpenAI.bind_tools``
+    takes) so that injected parameters like ``ToolRuntime`` are correctly
+    excluded from the schema.  Calling ``tool.args_schema.model_json_schema()``
+    directly exposes ``runtime`` as a required field, causing the model to
+    call tools with ``{}`` arguments and loop on validation errors.
+
     Chat Completions wraps function schemas as::
 
         {"type": "function", "function": {"name": ..., "description": ..., "parameters": ...}}
@@ -48,9 +54,15 @@ def _convert_tools_to_responses_format(tools: list) -> list:
 
         {"type": "function", "name": ..., "description": ..., "parameters": ...}
     """
+    try:
+        from langchain_core.utils.function_calling import convert_to_openai_tool
+    except ImportError:
+        convert_to_openai_tool = None  # type: ignore[assignment]
+
     converted = []
     for tool in tools:
         if isinstance(tool, dict):
+            # Already Chat Completions dict format — just reshape.
             fn = tool.get("function", tool)
             converted.append({
                 "type": "function",
@@ -58,18 +70,27 @@ def _convert_tools_to_responses_format(tools: list) -> list:
                 "description": fn.get("description", ""),
                 "parameters": fn.get("parameters", {}),
             })
+        elif convert_to_openai_tool is not None:
+            # Let LangChain handle schema extraction so injected args
+            # (ToolRuntime, InjectedToolArg, etc.) are filtered out correctly.
+            try:
+                oai = convert_to_openai_tool(tool)
+                fn = oai.get("function", oai)
+                converted.append({
+                    "type": "function",
+                    "name": fn.get("name", ""),
+                    "description": fn.get("description", ""),
+                    "parameters": fn.get("parameters", {}),
+                })
+            except Exception:
+                pass
         elif hasattr(tool, "name"):
-            schema: dict = {}
-            if hasattr(tool, "args_schema") and tool.args_schema:
-                try:
-                    schema = tool.args_schema.model_json_schema()
-                except Exception:
-                    pass
+            # Fallback when langchain_core is unavailable.
             converted.append({
                 "type": "function",
                 "name": tool.name,
                 "description": getattr(tool, "description", ""),
-                "parameters": schema,
+                "parameters": {},
             })
     return converted
 
