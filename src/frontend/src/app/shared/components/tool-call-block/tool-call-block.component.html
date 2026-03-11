@@ -10,6 +10,9 @@
     } @else {
       <span class="ml-1 text-yellow-500 text-[10px] animate-pulse">…</span>
     }
+    @if (block.name === 'task' && block.subagentActivity) {
+      <span class="ml-2 text-violet-400 text-[10px]">🤖 {{ block.subagentActivity.subagent }}</span>
+    }
     <span class="ml-auto text-zinc-600 text-[10px]">{{ collapsed() ? '▶' : '▼' }}</span>
   </button>
 
@@ -22,6 +25,80 @@
       <div class="border-t border-zinc-700 px-3 py-2">
         <p class="text-zinc-500 text-[10px] uppercase tracking-wider mb-1">result</p>
         <pre class="text-green-400 overflow-x-auto whitespace-pre-wrap break-all">{{ block.result }}</pre>
+      </div>
+    }
+
+    @if (block.name === 'task' && block.subagentActivity) {
+      <div class="border-t border-zinc-700">
+        <!-- Subagent activity header -->
+        <button
+          (click)="toggleSa()"
+          class="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-zinc-800/60 transition-colors"
+        >
+          <span class="text-violet-400">🤖</span>
+          <span class="text-violet-300 font-semibold text-[11px]">{{ block.subagentActivity.subagent }} activity</span>
+          <span class="ml-auto text-zinc-600 text-[10px]">{{ saCollapsed() ? '▶' : '▼' }}</span>
+        </button>
+
+        @if (!saCollapsed()) {
+          <div class="border-t border-zinc-700/60 ml-3 pl-3 border-l border-l-violet-800/40 py-1">
+            @for (item of block.subagentActivity.items; track $index) {
+
+              @if (item.type === 'thinking') {
+                <div class="my-0.5 rounded overflow-hidden border border-zinc-700/50 bg-zinc-800/50">
+                  <button
+                    (click)="toggleItem($index)"
+                    class="w-full flex items-center gap-1.5 px-2 py-1 text-left hover:bg-zinc-700/30 transition-colors"
+                  >
+                    <span class="text-zinc-500 text-[10px]">💭</span>
+                    <span class="text-zinc-500 text-[10px] italic">thinking</span>
+                    <span class="ml-auto text-zinc-600 text-[10px]">{{ isItemCollapsed($index) ? '▶' : '▼' }}</span>
+                  </button>
+                  @if (!isItemCollapsed($index)) {
+                    <div class="border-t border-zinc-700/40 px-2 py-1.5">
+                      <pre class="text-zinc-500 italic text-[10px] whitespace-pre-wrap break-all">{{ item.text }}</pre>
+                    </div>
+                  }
+                </div>
+              }
+
+              @if (item.type === 'tool_call') {
+                <div class="my-0.5 rounded overflow-hidden border border-zinc-700/50 bg-zinc-800/50">
+                  <button
+                    (click)="toggleItem($index)"
+                    class="w-full flex items-center gap-1.5 px-2 py-1 text-left hover:bg-zinc-700/30 transition-colors"
+                  >
+                    <span class="text-brand/70 text-[10px]">⚙</span>
+                    <span class="text-brand-300/80 text-[10px] font-semibold">{{ item.name }}</span>
+                    @if (item.result !== undefined) {
+                      <span class="ml-1 text-green-500 text-[9px]">✓</span>
+                    } @else {
+                      <span class="ml-1 text-yellow-500 text-[9px]">…</span>
+                    }
+                    <span class="ml-auto text-zinc-600 text-[10px]">{{ isItemCollapsed($index) ? '▶' : '▼' }}</span>
+                  </button>
+                  @if (!isItemCollapsed($index)) {
+                    <div class="border-t border-zinc-700/40 px-2 py-1.5">
+                      <p class="text-zinc-600 text-[9px] uppercase tracking-wider mb-0.5">args</p>
+                      <pre class="text-zinc-400 text-[10px] whitespace-pre-wrap break-all overflow-x-auto">{{ itemArgsJson(item) }}</pre>
+                      @if (item.result !== undefined) {
+                        <p class="text-zinc-600 text-[9px] uppercase tracking-wider mt-1 mb-0.5">result</p>
+                        <pre class="text-green-500/80 text-[10px] whitespace-pre-wrap break-all overflow-x-auto">{{ item.result }}</pre>
+                      }
+                    </div>
+                  }
+                </div>
+              }
+
+              @if (item.type === 'text') {
+                <div class="my-0.5 px-2 py-1 text-zinc-300 text-[11px] whitespace-pre-wrap break-words leading-relaxed">
+                  {{ item.text }}
+                </div>
+              }
+
+            }
+          </div>
+        }
       </div>
     }
   }

@@ -121,6 +121,13 @@ class AgentConfig:
     #   - OpenAI  → no effect (Chat Completions API does not expose reasoning)
     thinking_enabled: bool = False
     thinking_budget: int = 10000  # token budget; primarily used by Claude
+    # Experts — list of expert dicts (name, description, model, api_key, ...).
+    # When set and expert_lookup_enabled is True, the developer system prompt
+    # includes an expert catalog so the skill-developer can reference them.
+    experts: list = field(default_factory=list)
+    # When True (developer role only), inject expert catalog into the system prompt
+    # so the skill-developer can write skills that delegate to experts.
+    expert_lookup_enabled: bool = False
 
     def __post_init__(self) -> None:
         # Always include the bundled builtin skills directory.

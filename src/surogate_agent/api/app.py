@@ -17,6 +17,7 @@ from fastapi.responses import FileResponse
 
 from surogate_agent.api.routers import chat, sessions, skills, workspace
 from surogate_agent.api.routers import auth as auth_router
+from surogate_agent.api.routers import experts as experts_router
 from surogate_agent.api.routers import mcp_servers, vllm as vllm_router
 from surogate_agent.core.logging import get_logger, setup_logging
 
@@ -138,6 +139,7 @@ def create_app() -> FastAPI:
     application.include_router(workspace.router,      prefix="/api")
     application.include_router(mcp_servers.router,    prefix="/api")
     application.include_router(vllm_router.router,    prefix="/api")
+    application.include_router(experts_router.router, prefix="/api")
 
     # Serve Angular SPA at root when a build dir is present (skipped in dev).
     # A catch-all GET route is used instead of StaticFiles mount so that

@@ -21,6 +21,12 @@ role-restriction : "developer" | "user"
     Omit (or set to null) to load for all roles.
 allowed-tools : list[str]
     Explicit tool whitelist forwarded to deepagents.
+experts : list[str]
+    Names of expert sub-agents this skill is allowed to delegate to.
+    Each name must match an expert registered in the system.
+    Example: ``experts: researcher coder``
+    When listed here, the corresponding expert sub-agent is injected at
+    runtime so the skill instructions can call it by name.
 version : str
     Semver string for the skill.  Informational only.
 """
@@ -67,6 +73,7 @@ class SkillInfo:
     description: str
     role_restriction: Optional[str] = None   # "developer", "user", or None (all)
     allowed_tools: list[str] = field(default_factory=list)
+    experts: list[str] = field(default_factory=list)  # Expert sub-agent names
     version: str = "0.1.0"
     raw_frontmatter: dict = field(default_factory=dict)
 
@@ -191,7 +198,7 @@ def _extract_frontmatter_fields(fm_text: str) -> dict:
     The caller already handles defaults for every field, so this function only
     populates what it can confidently read.
     """
-    known_keys = {"name", "description", "role-restriction", "allowed-tools", "version"}
+    known_keys = {"name", "description", "role-restriction", "allowed-tools", "experts", "version"}
     line_re = re.compile(r"^([\w-]+)\s*:\s*(.*?)\s*$")
     fm: dict = {}
     for line in fm_text.splitlines():
@@ -344,6 +351,7 @@ def _parse_skill(skill_dir: Path, skill_md: Path) -> SkillInfo:
         description=description,
         role_restriction=fm.get("role-restriction"),
         allowed_tools=_parse_allowed_tools(fm.get("allowed-tools")),
+        experts=_parse_allowed_tools(fm.get("experts")),
         version=str(fm.get("version", "0.1.0")),
         raw_frontmatter=fm,
     )

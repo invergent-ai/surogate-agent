@@ -35,6 +35,7 @@ export interface UserResponse {
   vllm_context_length: number | null;
   thinking_enabled: boolean;
   thinking_budget: number;
+  expert_lookup_enabled: boolean;
 }
 
 export interface UserInfo {

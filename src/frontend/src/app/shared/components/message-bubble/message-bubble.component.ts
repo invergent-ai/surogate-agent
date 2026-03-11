@@ -19,4 +19,24 @@ export class MessageBubbleComponent {
   isError(block: MessageBlock): block is ErrorBlock {
     return block.type === 'error';
   }
+
+  /**
+   * While streaming: a text block is intermediary the instant another block
+   * arrives after it (i.e. it is no longer the last item in the array).
+   * This is detectable purely from the array length — no need to wait for a
+   * separate flag to be written.
+   *
+   * After finalized: fall back to the explicit `intermediary` flag that was
+   * stamped on the block when the following tool_call arrived, so only true
+   * intermediary blocks keep the frame (the final text loses it and gets
+   * the toolbar instead).
+   */
+  isIntermediaryText(block: MessageBlock): boolean {
+    if (block.type !== 'text') return false;
+    // After finalized: only blocks explicitly stamped by the tool_call handler keep the frame.
+    if (this.message.finalized) return !!(block as TextBlock).intermediary;
+    // While streaming: every text block is in-progress — we don't know yet which
+    // will be the final answer, so frame them all immediately.
+    return true;
+  }
 }

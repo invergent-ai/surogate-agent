@@ -70,8 +70,7 @@ def list_workspaces(settings: ServerSettings = Depends(settings_dep)):
 @router.get("/{skill}", response_model=WorkspaceResponse)
 def get_workspace(skill: str, settings: ServerSettings = Depends(settings_dep)):
     ws_dir = _resolve_skill_dir(settings.workspace_dir, skill)
-    if not ws_dir.is_dir():
-        raise HTTPException(status_code=404, detail=f"Workspace for skill '{skill}' not found")
+    ws_dir.mkdir(parents=True, exist_ok=True)
     return WorkspaceResponse(
         skill=skill,
         workspace_dir=str(ws_dir),
@@ -104,8 +103,7 @@ def delete_workspace(skill: str, settings: ServerSettings = Depends(settings_dep
 @router.get("/{skill}/files", response_model=list[FileInfo])
 def list_workspace_files(skill: str, settings: ServerSettings = Depends(settings_dep)):
     ws_dir = _resolve_skill_dir(settings.workspace_dir, skill)
-    if not ws_dir.is_dir():
-        raise HTTPException(status_code=404, detail=f"Workspace for skill '{skill}' not found")
+    ws_dir.mkdir(parents=True, exist_ok=True)
     return _file_infos(ws_dir)
 
 

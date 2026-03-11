@@ -9,7 +9,9 @@ Wraps ``deepagents.create_deep_agent()`` with:
 
 from __future__ import annotations
 
+import asyncio
 import os
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any, Optional
 
@@ -18,6 +20,49 @@ from surogate_agent.core.logging import get_logger
 from surogate_agent.core.roles import Role, RoleContext
 from surogate_agent.core.session import Session, SessionManager
 log = get_logger(__name__)
+
+# Per-request queue used by _CapturingRunnable to forward subagent activity
+# events back to the SSE stream in chat.py.  chat.py sets this contextvar
+# before streaming starts; _CapturingRunnable.ainvoke() reads it at call-time.
+subagent_activity_queue: ContextVar[asyncio.Queue | None] = ContextVar(
+    "subagent_activity_queue", default=None
+)
+
+
+class _CapturingRunnable:
+    """Wraps a CompiledSubAgent graph so its final message history is forwarded
+    to the SSE stream via *subagent_activity_queue*.
+
+    deepagents calls ``runnable.ainvoke(state)`` (or ``invoke`` in sync paths).
+    We intercept that call, run the graph normally, then put
+    ``(expert_name, messages)`` into the contextvar queue for chat.py to drain
+    and emit as a ``subagent_activity`` SSE event.
+    """
+
+    def __init__(self, graph, expert_name: str) -> None:
+        self._graph = graph
+        self._expert_name = expert_name
+
+    async def ainvoke(self, input, config=None, **kwargs):  # noqa: A002
+        result = await self._graph.ainvoke(input, config, **kwargs)
+        queue = subagent_activity_queue.get(None)
+        if queue is not None:
+            await queue.put((self._expert_name, result.get("messages", [])))
+        return result
+
+    def invoke(self, input, config=None, **kwargs):  # noqa: A002
+        result = self._graph.invoke(input, config, **kwargs)
+        queue = subagent_activity_queue.get(None)
+        if queue is not None:
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    loop.call_soon_threadsafe(queue.put_nowait, (self._expert_name, result.get("messages", [])))
+                else:
+                    loop.run_until_complete(queue.put((self._expert_name, result.get("messages", []))))
+            except Exception:
+                pass
+        return result
 
 try:
     from opik.integrations.langchain import OpikTracer, track_langgraph as _track_langgraph
@@ -752,6 +797,94 @@ def _build_llm(
     )
 
 
+def _build_expert_subagents(config: AgentConfig, role: "Role") -> list:
+    """Build CompiledSubAgent dicts from ``config.experts``.
+
+    Each expert becomes a compiled deepagents graph (its own LLM, skills, and
+    tools) wrapped as a ``CompiledSubAgent`` dict.  The main agent receives
+    these via ``create_deep_agent(subagents=...)``, which gives it a native
+    ``task`` tool to delegate work to each expert.
+
+    Developer agents never receive expert subagents — developers author skills
+    that reference experts; they don't run them directly.  config.experts is
+    still populated for developers so _build_system_suffix can show the catalog.
+    """
+    if role != Role.USER or not config.experts:
+        return []
+
+    create_deep_agent = _import_deepagents()
+    subagents: list = []
+
+    for expert_data in config.experts:
+        expert_name: str = expert_data.get("name", "")
+        if not expert_name:
+            continue
+        try:
+            # Build the expert's LLM — falls back to the main config's model
+            # when the expert has no model configured.
+            provider_str = (expert_data.get("openrouter_provider") or "").strip()
+            expert_provider = (
+                {"order": [p.strip() for p in provider_str.split(",") if p.strip()]}
+                if provider_str else None
+            )
+            expert_llm = _build_llm(
+                expert_data.get("model") or config.model,
+                api_key=expert_data.get("api_key") or config.api_key,
+                openrouter_provider=expert_provider,
+                vllm_base_url=expert_data.get("vllm_url") or "",
+                vllm_tool_calling=expert_data.get("vllm_tool_calling", True),
+                vllm_temperature=expert_data.get("vllm_temperature"),
+                vllm_top_k=expert_data.get("vllm_top_k"),
+                vllm_top_p=expert_data.get("vllm_top_p"),
+                vllm_min_p=expert_data.get("vllm_min_p"),
+                vllm_presence_penalty=expert_data.get("vllm_presence_penalty"),
+                thinking_enabled=expert_data.get("thinking_enabled", False),
+                thinking_budget=expert_data.get("thinking_budget", 10000),
+            )
+
+            # Skill sources — same user skills dir as the main agent.
+            # available_skills constraint is enforced via system prompt.
+            expert_skill_sources: list[str] = []
+            if config.user_skills_dir.exists():
+                expert_skill_sources.append(str(config.user_skills_dir))
+
+            # System prompt: enforce available_skills / available_tools constraints.
+            avail_skills: list[str] = expert_data.get("available_skills") or []
+            avail_tools: list[str] = expert_data.get("available_tools") or []
+            constraint_parts: list[str] = []
+            if avail_skills:
+                skill_list = ", ".join(f"`{s}`" for s in avail_skills)
+                constraint_parts.append(
+                    f"You may only use the following skills: {skill_list}. "
+                    "Do not activate or reference any other skill."
+                )
+            if avail_tools:
+                tool_list = ", ".join(f"`{t}`" for t in avail_tools)
+                constraint_parts.append(
+                    f"You may only use the following tools: {tool_list}. "
+                    "Do not call any other tool."
+                )
+            expert_system_prompt = "\n\n".join(constraint_parts) or None
+
+            expert_graph = create_deep_agent(
+                model=expert_llm,
+                skills=expert_skill_sources or None,
+                system_prompt=expert_system_prompt,
+            )
+
+            subagents.append({
+                "name": expert_name,
+                "description": expert_data.get("description", ""),
+                "runnable": _CapturingRunnable(expert_graph, expert_name),
+            })
+            log.debug("built expert subagent: %s", expert_name)
+
+        except Exception as exc:
+            log.warning("could not build expert subagent '%s': %s", expert_name, exc)
+
+    return subagents
+
+
 def create_agent(
     role: Role = Role.USER,
     config: Optional[AgentConfig] = None,
@@ -933,12 +1066,18 @@ def create_agent(
     system_suffix = _build_system_suffix(role_ctx, config, session, active_skill)
     log.trace("system prompt suffix length: %d chars", len(system_suffix))  # type: ignore[attr-defined]
 
+    # Build expert subagents for user role only.  Developer role keeps
+    # config.experts intact for the system-prompt catalog but gets no subagents.
+    expert_subagents = _build_expert_subagents(config, role)
+
     graph_kwargs: dict[str, Any] = dict(
         model=llm,
         tools=config.extra_tools,
         skills=skill_sources if skill_sources else None,
         system_prompt=system_suffix if system_suffix else None,
     )
+    if expert_subagents:
+        graph_kwargs["subagents"] = expert_subagents
     if backend is not None:
         graph_kwargs["backend"] = backend
     if checkpointer is not None:
@@ -1192,6 +1331,44 @@ def _build_system_suffix(
             f"   - Any other directory not listed above\n\n"
             f"### Files currently in your session workspace\n"
             f"{session_snapshot}"
+        )
+
+    # User role: inject a strict gate so the agent only uses expert sub-agents
+    # when the currently-active skill's SKILL.md explicitly authorises it.
+    # deepagents already lists available subagents inside the task-tool description,
+    # so we do NOT repeat them here — we only add the behavioural constraint.
+    if not role_ctx.is_developer and config.experts:
+        parts.append(
+            "## Expert sub-agents — strict usage rule\n\n"
+            "Expert sub-agents are available via the `task` tool. "
+            "**You MUST NOT call the `task` tool on your own initiative.** "
+            "The ONLY time you may call it is when the currently active skill's "
+            "SKILL.md explicitly instructs you to delegate to a specific expert. "
+            "Use exactly the expert name the skill names — do not substitute, "
+            "combine, or add experts the skill did not declare.\n"
+        )
+
+    # Expert catalog — developer role only, when expert_lookup_enabled is set.
+    # Experts are sub-agents, NOT tools available to the developer agent itself.
+    # The catalog is shown so the skill developer knows which expert names to
+    # declare in a skill's ``experts:`` frontmatter field.
+    if role_ctx.is_developer and config.expert_lookup_enabled and config.experts:
+        expert_lines = "\n".join(
+            f"  - **{e.get('name', '?')}**: {e.get('description', '(no description)')}"
+            for e in config.experts
+        )
+        parts.append(
+            f"## Registered Expert Sub-Agents (skill authoring reference)\n\n"
+            f"The following expert sub-agents are registered. They are **not** available "
+            f"in this developer session. A user-role skill can delegate to an expert by "
+            f"declaring it in the skill's `experts:` frontmatter field:\n\n"
+            f"```yaml\n"
+            f"experts: expert-name-one expert-name-two\n"
+            f"```\n\n"
+            f"At runtime the listed experts are injected as callable sub-agents. "
+            f"The skill instructions should describe *when* and *how* to delegate to each expert.\n\n"
+            f"**Available experts:**\n\n"
+            f"{expert_lines}\n"
         )
 
     if config.system_prompt_suffix:

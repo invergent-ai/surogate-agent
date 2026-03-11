@@ -11,7 +11,8 @@ import { SettingsService } from '../../../core/services/settings.service';
 import { SkillsService } from '../../../core/services/skills.service';
 import { ToastService } from '../../../core/services/toast.service';
 import {
-  ChatMessage, MessageBlock, SseEvent, ToolBlock, ThinkingBlock, SseSkillUseData
+  ChatMessage, MessageBlock, SseEvent, ToolBlock, TextBlock, ThinkingBlock, SseSkillUseData,
+  SseSubagentActivityData,
 } from '../../../core/models/chat.models';
 import { MessageBubbleComponent } from '../message-bubble/message-bubble.component';
 import { ThinkingBlockComponent } from '../thinking-block/thinking-block.component';
@@ -22,6 +23,15 @@ function nextId() { return `msg-${++msgCounter}`; }
 
 // Regex to extract skill name from paths like "skills/foo/SKILL.md"
 const SKILL_PATH_RE = /skills\/([^/]+)\/SKILL\.md/;
+
+interface SkillActivity {
+  name: string;
+  description: string;
+  finished: boolean;
+  startTime: number;
+  endTime?: number;
+  subagent?: string;
+}
 
 @Component({
   selector: 'app-chat',
@@ -57,6 +67,25 @@ export class ChatComponent implements OnChanges, OnDestroy {
   currentSessionId = signal('');
   inputText = signal('');
 
+  /**
+   * Human-readable status of the current agent turn.
+   * Updated by handleEvent() as SSE events arrive.
+   * '' = idle (not streaming).
+   */
+  agentStatus = signal<string>('');
+
+  /** Debounced status shown in the UI — avoids flicker on rapid transitions. */
+  displayedStatus   = signal<string>('');
+  /** The status that was displayed just before the current one — used for the
+   *  "prev › current" breadcrumb in the agent activity header. */
+  prevDisplayedStatus = signal<string>('');
+
+  private _statusDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Raw status value from the previous agentStatus change — captured immediately,
+   *  before the debounce fires, so the breadcrumb always reflects the last real
+   *  transition even when rapid changes collapse into one debounced update. */
+  private _prevRawStatus = '';
+
   /** All thinking + tool_call blocks extracted from assistant messages for the side panel. */
   readonly thinkingBlocks = computed<(ThinkingBlock | ToolBlock)[]>(() => {
     const result: (ThinkingBlock | ToolBlock)[] = [];
@@ -72,7 +101,22 @@ export class ChatComponent implements OnChanges, OnDestroy {
   });
 
   /** Skills announced by the backend for the current turn; drives the skill activity panel. */
-  skillActivities = signal<{ name: string; description: string; finished: boolean; startTime: number; endTime?: number }[]>([]);
+  skillActivities = signal<SkillActivity[]>([]);
+
+  /** Skills grouped by subagent (null = main agent). Used to render the skill tree. */
+  readonly skillTree = computed<{ subagent: string | null; skills: SkillActivity[] }[]>(() => {
+    const MAIN = '__main__';
+    const groups = new Map<string, SkillActivity[]>();
+    for (const sa of this.skillActivities()) {
+      const key = sa.subagent ?? MAIN;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(sa);
+    }
+    return [...groups.entries()].map(([key, skills]) => ({
+      subagent: key === MAIN ? null : key,
+      skills,
+    }));
+  });
 
   // Panel visibility: eye icon toggles show/hide; slashed eye = hidden
   agentPanelHidden  = signal(false);
@@ -101,6 +145,8 @@ export class ChatComponent implements OnChanges, OnDestroy {
 
   private sub?: Subscription;
   private _currentAssistantId = '';
+  /** Name of the subagent currently running (set on task tool_call, cleared after tool_result). */
+  private _activeSubagent = '';
   private _dragStartY    = 0;
   private _dragStartH    = 0;
   private _boundMouseMove?: (e: MouseEvent) => void;
@@ -136,6 +182,24 @@ export class ChatComponent implements OnChanges, OnDestroy {
     });
     effect(() => {
       this.hasMessages.emit(this.messages().length > 0);
+    });
+    // Debounce agentStatus → displayedStatus so rapid transitions (e.g. tool_call
+    // immediately followed by tool_result) don't flicker.
+    // _prevRawStatus is captured synchronously on every raw change so the
+    // breadcrumb always shows the last real predecessor, not a stale early value.
+    effect(() => {
+      const next = this.agentStatus();
+      // Capture previous raw value BEFORE resetting the timer — this records the
+      // status just before this latest change, regardless of debounce collapsing.
+      const prevRaw = this._prevRawStatus;
+      this._prevRawStatus = next;
+      if (this._statusDebounceTimer !== null) clearTimeout(this._statusDebounceTimer);
+      this._statusDebounceTimer = setTimeout(() => {
+        this._statusDebounceTimer = null;
+        // Always commit both so stale breadcrumbs can't persist across tool cycles.
+        this.prevDisplayedStatus.set(prevRaw);
+        this.displayedStatus.set(next);
+      }, 180);
     });
   }
 
@@ -210,6 +274,7 @@ export class ChatComponent implements OnChanges, OnDestroy {
 
     this._currentAssistantId = assistantId;
     this.streaming.set(true);
+    this.agentStatus.set('Starting…');
     this.scrollToBottom();
 
     this.sub = this.chatService.streamChat({
@@ -223,11 +288,13 @@ export class ChatComponent implements OnChanges, OnDestroy {
         this.finalizeAssistant(assistantId, [{ type: 'error', text: String(err?.message ?? err) }]);
         this.skillActivities.update(list => list.map(s => ({ ...s, finished: true, endTime: s.endTime ?? Date.now() })));
         this.streaming.set(false);
+        this.agentStatus.set('');
         this.responseDone.emit();
       },
       complete: () => {
         this._currentAssistantId = '';
         this.streaming.set(false);
+        this.agentStatus.set('');
         this._emitSnapshot();
       },
     });
@@ -242,6 +309,8 @@ export class ChatComponent implements OnChanges, OnDestroy {
     }
     this.skillActivities.update(list => list.map(s => ({ ...s, finished: true, endTime: s.endTime ?? Date.now() })));
     this.streaming.set(false);
+    this.agentStatus.set('');
+    this._activeSubagent = '';
     this._emitSnapshot();
   }
 
@@ -261,6 +330,7 @@ export class ChatComponent implements OnChanges, OnDestroy {
     if (ev.event === 'skill_use') {
       const d = ev.data as SseSkillUseData;
       this._skillDescriptions.set(d.name, d.description);
+      this.agentStatus.set('Loading skills…');
       return;
     }
 
@@ -293,9 +363,27 @@ export class ChatComponent implements OnChanges, OnDestroy {
 
       switch (ev.event) {
         case 'thinking':
+          this.agentStatus.set('Reasoning…');
           msg.blocks.push({ type: 'thinking', text: ev.data.text, collapsed: true });
           break;
         case 'tool_call': {
+          const toolName = ev.data.name as string;
+          if (toolName === 'task') {
+            const subagentType = (ev.data.args?.['subagent_type'] ?? '') as string;
+            this._activeSubagent = subagentType;
+            this.agentStatus.set(subagentType ? `${subagentType} subagent – delegating…` : 'Running: task');
+          } else {
+            this._activeSubagent = '';
+            this.agentStatus.set('Running: ' + toolName);
+          }
+          // Mark the last text block (if any) as intermediary — it is now
+          // followed by a tool_call so it is not the final response.
+          for (let i = msg.blocks.length - 1; i >= 0; i--) {
+            if (msg.blocks[i].type === 'text') {
+              (msg.blocks[i] as TextBlock).intermediary = true;
+              break;
+            }
+          }
           const tc: ToolBlock = { type: 'tool_call', name: ev.data.name, args: ev.data.args, collapsed: true };
           msg.blocks.push(tc);
           // Detect skill from write_file calls
@@ -313,6 +401,12 @@ export class ChatComponent implements OnChanges, OnDestroy {
             const realIdx = msg.blocks.length - 1 - tcIdx;
             (msg.blocks[realIdx] as ToolBlock).result = ev.data.result;
           }
+          if (this._activeSubagent) {
+            this.agentStatus.set(`${this._activeSubagent} subagent – waiting for LLM…`);
+            this._activeSubagent = '';
+          } else {
+            this.agentStatus.set('Waiting for LLM…');
+          }
           break;
         }
         case 'text':
@@ -322,8 +416,10 @@ export class ChatComponent implements OnChanges, OnDestroy {
           } else {
             msg.blocks.push({ type: 'text', text: ev.data.text });
           }
+          if (this.agentStatus() !== 'Generating response…') this.agentStatus.set('Generating response…');
           break;
         case 'done':
+          this.agentStatus.set('');
           msg.finalized = true;
           if (ev.data.session_id) {
             const sid = ev.data.session_id;
@@ -334,7 +430,48 @@ export class ChatComponent implements OnChanges, OnDestroy {
           }
           this.filesChanged.emit(ev.data.files ?? []);
           break;
+        case 'subagent_activity': {
+          // Attach subagent activity to the last 'task' tool_call block.
+          const d = ev.data as SseSubagentActivityData;
+          const saIdx = [...msg.blocks].reverse().findIndex(
+            b => b.type === 'tool_call' && (b as ToolBlock).name === 'task'
+              && !(b as ToolBlock).subagentActivity
+          );
+          if (saIdx >= 0) {
+            const realIdx = msg.blocks.length - 1 - saIdx;
+            (msg.blocks[realIdx] as ToolBlock).subagentActivity = {
+              subagent: d.subagent,
+              items: d.items,
+            };
+          }
+          // Extract skill reads from the subagent's tool_call items and add to skill tree
+          if (this.showSkillActivity) {
+            const now = Date.now();
+            const subagentSkills: SkillActivity[] = [];
+            for (const item of d.items) {
+              if (item.type === 'tool_call') {
+                const path = ((item.args?.['path'] ?? item.args?.['file_path'] ?? '') as string);
+                const m = path.match(SKILL_PATH_RE);
+                if (m) {
+                  subagentSkills.push({
+                    name: m[1],
+                    description: this._skillDescriptions.get(m[1]) ?? '',
+                    finished: true,
+                    startTime: now,
+                    endTime: now,
+                    subagent: d.subagent,
+                  });
+                }
+              }
+            }
+            if (subagentSkills.length > 0) {
+              this.skillActivities.update(list => [...list, ...subagentSkills]);
+            }
+          }
+          break;
+        }
         case 'error':
+          this.agentStatus.set('');
           msg.blocks.push({ type: 'error', text: ev.data.detail });
           msg.finalized = true;
           break;
@@ -391,15 +528,28 @@ export class ChatComponent implements OnChanges, OnDestroy {
     // any SKILL.md paths that appear in saved tool_call args. Duplicates are kept to
     // preserve the full ordered execution sequence (same skill can run multiple times).
     if (this.showSkillActivity) {
-      const skills: { name: string; description: string; finished: boolean; startTime: number; endTime?: number }[] = [];
+      const skills: SkillActivity[] = [];
       for (const msg of msgs) {
         const ts = (msg.timestamp instanceof Date ? msg.timestamp : new Date(msg.timestamp as unknown as string)).getTime();
         for (const block of msg.blocks) {
           if (block.type === 'tool_call') {
-            const path = ((block as ToolBlock).args?.['path'] ?? (block as ToolBlock).args?.['file_path'] ?? '') as string;
+            const tb = block as ToolBlock;
+            const path = (tb.args?.['path'] ?? tb.args?.['file_path'] ?? '') as string;
             const m = path.match(SKILL_PATH_RE);
             if (m) {
               skills.push({ name: m[1], description: '', finished: true, startTime: ts, endTime: ts });
+            }
+            // Extract subagent skills from task blocks
+            if (tb.name === 'task' && tb.subagentActivity) {
+              for (const item of tb.subagentActivity.items) {
+                if (item.type === 'tool_call') {
+                  const saPath = ((item.args?.['path'] ?? item.args?.['file_path'] ?? '') as string);
+                  const saMatch = saPath.match(SKILL_PATH_RE);
+                  if (saMatch) {
+                    skills.push({ name: saMatch[1], description: '', finished: true, startTime: ts, endTime: ts, subagent: tb.subagentActivity.subagent });
+                  }
+                }
+              }
             }
           }
         }
@@ -487,8 +637,12 @@ export class ChatComponent implements OnChanges, OnDestroy {
     return 'flex-1';
   }
 
-  toggleSkillExpanded(name: string) {
-    this.expandedSkill.update(current => current === name ? null : name);
+  skillKey(sa: SkillActivity): string {
+    return sa.name + '|' + (sa.subagent ?? 'main');
+  }
+
+  toggleSkillExpanded(key: string) {
+    this.expandedSkill.update(current => current === key ? null : key);
   }
 
   formatDuration(startTime: number, endTime?: number): string {
@@ -508,6 +662,7 @@ export class ChatComponent implements OnChanges, OnDestroy {
 
   ngOnDestroy() {
     this.sub?.unsubscribe();
+    if (this._statusDebounceTimer !== null) clearTimeout(this._statusDebounceTimer);
     if (this._boundMouseMove) document.removeEventListener('mousemove', this._boundMouseMove);
     if (this._boundMouseUp)   document.removeEventListener('mouseup',   this._boundMouseUp);
   }

@@ -16,7 +16,7 @@ from surogate_agent.api.deps import ServerSettings, settings_dep
 from surogate_agent.api.models import ChatRequest
 from surogate_agent.auth.jwt import get_current_user
 from surogate_agent.auth.models import User
-from surogate_agent.core.agent import create_agent
+from surogate_agent.core.agent import create_agent, subagent_activity_queue
 from surogate_agent.core.config import AgentConfig, _DEFAULT_SKILLS_DIR
 from surogate_agent.core.logging import get_logger
 from surogate_agent.core.roles import Role
@@ -212,9 +212,61 @@ def _looks_like_message(obj) -> bool:
     return isinstance(obj, dict) and "role" in obj
 
 
+def _extract_subagent_activity(expert_name: str, messages: list) -> dict:
+    """Convert a subagent's final message history into a compact activity dict
+    suitable for the ``subagent_activity`` SSE event."""
+    import asyncio as _asyncio
+    items: list[dict] = []
+    for msg in messages:
+        msg_type = (
+            msg.get("type") if isinstance(msg, dict)
+            else getattr(msg, "type", None)
+        )
+        if msg_type in ("ai", "assistant"):
+            content = (
+                msg.get("content", "") if isinstance(msg, dict)
+                else getattr(msg, "content", "")
+            )
+            tool_calls = (
+                msg.get("tool_calls", []) if isinstance(msg, dict)
+                else getattr(msg, "tool_calls", [])
+            )
+            thinking = _extract_thinking(content) or _extract_openrouter_reasoning(msg)
+            if thinking:
+                items.append({"type": "thinking", "text": thinking})
+            for tc in tool_calls or []:
+                name = tc.get("name", "?") if isinstance(tc, dict) else getattr(tc, "name", "?")
+                args = tc.get("args", {}) if isinstance(tc, dict) else getattr(tc, "args", {})
+                items.append({"type": "tool_call", "name": name, "args": args})
+            text = _extract_content_text(content)
+            if text:
+                inline_thinking, clean = _split_inline_thinking(text)
+                if inline_thinking:
+                    items.append({"type": "thinking", "text": inline_thinking})
+                if clean:
+                    items.append({"type": "text", "text": clean})
+        elif msg_type == "tool":
+            name = (
+                msg.get("name") or msg.get("tool_call_id", "?")
+                if isinstance(msg, dict)
+                else (getattr(msg, "name", None) or getattr(msg, "tool_call_id", "?"))
+            )
+            result_content = (
+                msg.get("content", "") if isinstance(msg, dict)
+                else getattr(msg, "content", "")
+            )
+            for item in reversed(items):
+                if item["type"] == "tool_call" and item.get("name") == name and "result" not in item:
+                    item["result"] = str(result_content)[:500]
+                    break
+    return {"subagent": expert_name, "items": items}
+
+
 async def _stream_chat(
     req: ChatRequest,
     settings: ServerSettings,
+    experts_data: list[dict] | None = None,
+    expert_lookup_enabled: bool = False,
 ) -> AsyncGenerator[dict, None]:
     try:
         # Resolve role
@@ -266,6 +318,8 @@ async def _stream_chat(
             vllm_context_length=req.vllm_context_length,
             thinking_enabled=req.thinking_enabled,
             thinking_budget=req.thinking_budget,
+            experts=experts_data or [],
+            expert_lookup_enabled=expert_lookup_enabled,
         )
 
         # Session setup
@@ -364,6 +418,65 @@ async def _stream_chat(
         except Exception as _mcp_exc:
             log.debug("MCP tool injection skipped: %s", _mcp_exc)
 
+        # For user role: filter config.experts to only those declared in at least
+        # one user skill's ``experts:`` frontmatter.
+        #
+        # When req.skill is set (e.g. developer "Test as User" with a skill pre-
+        # selected), restrict further to that specific skill's experts list.
+        # When req.skill is empty (normal user chat — skill is chosen dynamically
+        # by the agent at runtime), include experts referenced by ANY installed
+        # user skill so the agent can use them after reading the skill's SKILL.md.
+        #
+        # Developer role: config.experts is left intact so _build_system_suffix
+        # can show the catalog; _build_expert_subagents guards against injecting
+        # subagents for the developer role at the create_agent level.
+        if role == Role.USER and config.experts:
+            try:
+                from surogate_agent.skills.loader import SkillLoader
+                _all_skill_experts: set[str] = set()
+                for _root in [config.user_skills_dir] + list(config.skills_dirs):
+                    if not _root.exists():
+                        continue
+                    for _si in SkillLoader(_root).load():
+                        if not _si.is_developer_only:
+                            _all_skill_experts.update(_si.experts)
+            except Exception as _sl_exc:
+                log.debug("could not load skill experts list: %s", _sl_exc)
+                _all_skill_experts = set()
+
+            if req.skill.strip():
+                # Narrow further to the explicitly selected skill's experts.
+                _active_skill_name = req.skill.strip()
+                _skill_experts: set[str] = set()
+                _skill_found = False
+                try:
+                    from surogate_agent.skills.loader import SkillLoader
+                    for _root in [config.user_skills_dir] + list(config.skills_dirs):
+                        if not _root.exists():
+                            continue
+                        for _si in SkillLoader(_root).load():
+                            if _si.name == _active_skill_name:
+                                _skill_experts = set(_si.experts)
+                                _skill_found = True
+                                break
+                        if _skill_found:
+                            break
+                except Exception as _sl_exc2:
+                    log.debug("could not load active skill experts list: %s", _sl_exc2)
+                _all_skill_experts = _skill_experts
+                log.debug("skill '%s' experts: %s", _active_skill_name, sorted(_all_skill_experts))
+
+            config.experts = [
+                e for e in config.experts if e.get("name") in _all_skill_experts
+            ]
+            log.debug("user experts after filter: %s", [e.get("name") for e in config.experts])
+
+        # Set up per-request subagent activity queue so _CapturingRunnable
+        # can forward expert message histories back to this SSE stream.
+        import asyncio as _asyncio
+        _sa_queue: _asyncio.Queue = _asyncio.Queue()
+        _sa_token = subagent_activity_queue.set(_sa_queue)
+
         # Create agent
         agent = create_agent(
             role=role,
@@ -454,6 +567,17 @@ async def _stream_chat(
                 "maximum context", "too many tokens", "max_tokens",
             ))
 
+        async def _drain_subagent_queue():
+            """Yield subagent_activity SSE events for all completed subagent calls."""
+            while not _sa_queue.empty():
+                try:
+                    expert_name, messages = _sa_queue.get_nowait()
+                    activity = _extract_subagent_activity(expert_name, messages)
+                    log.debug("SSE subagent_activity: %s (%d items)", expert_name, len(activity["items"]))
+                    yield _sse_event("subagent_activity", activity)
+                except Exception:
+                    break
+
         async def _run_agent(the_agent):
             """Async generator that streams SSE events from one agent run."""
             async for chunk in the_agent.astream(invoke_input, config=invoke_config):
@@ -527,6 +651,12 @@ async def _stream_chat(
                             "tool_result",
                             {"name": name, "result": str(result_content)[:500]},
                         )
+                        # If this was a task tool result, drain the subagent activity
+                        # queue so the frontend receives the expert's activity tree
+                        # immediately after the tool result.
+                        if name == "task":
+                            async for sa_event in _drain_subagent_queue():
+                                yield sa_event
 
         try:
             # First attempt — normal flow.
@@ -571,6 +701,7 @@ async def _stream_chat(
                     yield event
 
         finally:
+            subagent_activity_queue.reset(_sa_token)
             if _checkpointer_ctx is not None:
                 try:
                     await _checkpointer_ctx.__aexit__(None, None, None)
@@ -635,8 +766,28 @@ async def chat_endpoint(
         "thinking_budget": req.thinking_budget if req.thinking_budget != 10000 else (current_user.thinking_budget or 10000),
     })
 
+    # Load experts for the current user (use a short-lived session, not a Depends,
+    # so tests that mock get_current_user but not get_db continue to work).
+    experts_data: list[dict] = []
+    expert_lookup_enabled_flag = bool(current_user.expert_lookup_enabled)
+    try:
+        from surogate_agent.auth.database import SessionLocal
+        from surogate_agent.auth.schemas import ExpertResponse
+        from surogate_agent.auth.service import list_experts
+        with SessionLocal() as _db:
+            _db_experts = list_experts(_db, current_user.id)
+            for _exp in _db_experts:
+                _schema = ExpertResponse.model_validate(_exp)
+                experts_data.append(_schema.model_dump())
+    except Exception as _exp_load_exc:
+        log.debug("could not load experts: %s", _exp_load_exc)
+
     async def generator():
-        async for event in _stream_chat(authed_req, settings):
+        async for event in _stream_chat(
+            authed_req, settings,
+            experts_data=experts_data,
+            expert_lookup_enabled=expert_lookup_enabled_flag,
+        ):
             yield event
 
     return EventSourceResponse(generator())

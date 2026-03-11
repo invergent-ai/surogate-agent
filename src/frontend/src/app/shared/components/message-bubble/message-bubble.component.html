@@ -4,7 +4,7 @@
     <div class="max-w-[80%] rounded-2xl rounded-br-sm px-4 py-2.5 bg-brand text-zinc-900 select-text">
       @for (block of message.blocks; track $index) {
         @if (isText(block)) {
-          <p class="text-sm leading-relaxed whitespace-pre-wrap">{{ block.text }}</p>
+          <p class="text-sm leading-relaxed whitespace-pre-wrap break-all">{{ block.text }}</p>
         } @else if (isError(block)) {
           <p class="text-sm text-red-700">⚠ {{ block.text }}</p>
         }
@@ -18,7 +18,8 @@
       @if (isText(block)) {
         <app-markdown-content
           [text]="block.text"
-          [finalized]="message.finalized">
+          [finalized]="message.finalized"
+          [intermediary]="isIntermediaryText(block)">
         </app-markdown-content>
       } @else if (isError(block)) {
         <div class="flex items-start gap-2 px-3 py-2 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 text-red-600 dark:text-red-400 text-sm my-2">

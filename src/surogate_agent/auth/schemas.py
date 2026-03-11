@@ -68,6 +68,7 @@ class UserSettingsUpdate(BaseModel):
     vllm_context_length: Optional[int] = None
     thinking_enabled: bool = False
     thinking_budget: int = 10000
+    expert_lookup_enabled: bool = False
 
 
 class UserResponse(BaseModel):
@@ -93,6 +94,7 @@ class UserResponse(BaseModel):
     vllm_context_length: Optional[int] = None
     thinking_enabled: bool = False
     thinking_budget: int = 10000
+    expert_lookup_enabled: bool = False
 
     @field_validator("model", "api_key", "openrouter_provider", "vllm_url", mode="before")
     @classmethod
@@ -103,3 +105,109 @@ class UserResponse(BaseModel):
     @classmethod
     def _none_to_true(cls, v) -> bool:
         return v if v is not None else True
+
+
+# ---------------------------------------------------------------------------
+# Expert schemas
+# ---------------------------------------------------------------------------
+
+
+class ExpertCreate(BaseModel):
+    """Payload for creating a new expert."""
+    name: str
+    description: str = ""
+    model: str = ""
+    api_key: str = ""
+    openrouter_provider: str = ""
+    vllm_url: str = ""
+    vllm_tool_calling: bool = True
+    vllm_temperature: Optional[float] = None
+    vllm_top_k: Optional[int] = None
+    vllm_top_p: Optional[float] = None
+    vllm_min_p: Optional[float] = None
+    vllm_presence_penalty: Optional[float] = None
+    vllm_context_length: Optional[int] = None
+    thinking_enabled: bool = False
+    thinking_budget: int = 10000
+    available_tools: list[str] = []
+    available_skills: list[str] = []
+    available_mcp_servers: list[str] = []
+
+
+class ExpertUpdate(BaseModel):
+    """Payload for updating an existing expert."""
+    name: Optional[str] = None
+    description: Optional[str] = None
+    model: Optional[str] = None
+    api_key: Optional[str] = None
+    openrouter_provider: Optional[str] = None
+    vllm_url: Optional[str] = None
+    vllm_tool_calling: Optional[bool] = None
+    vllm_temperature: Optional[float] = None
+    vllm_top_k: Optional[int] = None
+    vllm_top_p: Optional[float] = None
+    vllm_min_p: Optional[float] = None
+    vllm_presence_penalty: Optional[float] = None
+    vllm_context_length: Optional[int] = None
+    thinking_enabled: Optional[bool] = None
+    thinking_budget: Optional[int] = None
+    available_tools: Optional[list[str]] = None
+    available_skills: Optional[list[str]] = None
+    available_mcp_servers: Optional[list[str]] = None
+
+
+class ExpertResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    user_id: int
+    name: str
+    description: str = ""
+    model: str = ""
+    api_key: str = ""
+    openrouter_provider: str = ""
+    vllm_url: str = ""
+    vllm_tool_calling: bool = True
+    vllm_temperature: Optional[float] = None
+    vllm_top_k: Optional[int] = None
+    vllm_top_p: Optional[float] = None
+    vllm_min_p: Optional[float] = None
+    vllm_presence_penalty: Optional[float] = None
+    vllm_context_length: Optional[int] = None
+    thinking_enabled: bool = False
+    thinking_budget: int = 10000
+    available_tools: list[str] = []
+    available_skills: list[str] = []
+    available_mcp_servers: list[str] = []
+    created_at: datetime
+
+    @field_validator("model", "api_key", "openrouter_provider", "vllm_url", mode="before")
+    @classmethod
+    def _none_to_empty_str(cls, v: Optional[str]) -> str:
+        return v or ""
+
+    @field_validator("vllm_tool_calling", mode="before")
+    @classmethod
+    def _none_bool_true(cls, v) -> bool:
+        return v if v is not None else True
+
+    @field_validator("thinking_enabled", mode="before")
+    @classmethod
+    def _none_bool_false(cls, v) -> bool:
+        return v if v is not None else False
+
+    @field_validator("available_tools", "available_skills", "available_mcp_servers", mode="before")
+    @classmethod
+    def _parse_json_list(cls, v) -> list[str]:
+        if v is None:
+            return []
+        if isinstance(v, list):
+            return v
+        if isinstance(v, str):
+            import json
+            try:
+                parsed = json.loads(v)
+                return parsed if isinstance(parsed, list) else []
+            except Exception:
+                return []
+        return []

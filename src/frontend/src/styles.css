@@ -329,6 +329,33 @@
 .hljs-addition                                 { color: #aff5b4; background: #033a16; }
 .hljs-deletion                                 { color: #ffdcd7; background: #67060c; }
 
+/* ─── Intermediary message block ─────────────────────────────────────────── */
+/*
+ * Intermediary assistant messages are text blocks followed by tool calls in
+ * the same turn.  They are framed with a subtle border and, while the turn is
+ * still streaming, gently pulse to signal "in-progress".
+ */
+@keyframes gentle-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.65; }
+}
+
+.md-intermediary {
+  border-left: 2px solid #e5e7eb;
+  padding: 6px 12px;
+  margin-bottom: 8px;
+  border-radius: 0 6px 6px 0;
+  background: rgba(249, 250, 251, 0.6);
+}
+.dark .md-intermediary {
+  border-left-color: #3f3f46;
+  background: rgba(24, 24, 27, 0.45);
+}
+
+.md-intermediary-streaming {
+  animation: gentle-pulse 2s ease-in-out infinite;
+}
+
 /* Scrollbar styling */
 @layer utilities {
   .scrollbar-thin {

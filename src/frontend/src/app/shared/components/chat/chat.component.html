@@ -29,7 +29,16 @@
               <div class="flex-none flex items-center gap-2 px-3 py-1.5 border-b border-gray-200 dark:border-zinc-700">
                 <span class="text-[10px] font-semibold uppercase tracking-widest text-gray-400 dark:text-zinc-500">Agent activity</span>
                 @if (streaming()) {
-                  <span class="flex gap-0.5">
+                  @if (displayedStatus()) {
+                    <span class="flex items-center gap-1 min-w-0 overflow-hidden text-[10px] italic">
+                      @if (prevDisplayedStatus() && prevDisplayedStatus() !== displayedStatus()) {
+                        <span class="text-gray-400 dark:text-zinc-600 truncate max-w-[90px] flex-none">{{ prevDisplayedStatus() }}</span>
+                        <span class="text-gray-400 dark:text-zinc-600 flex-none">›</span>
+                      }
+                      <span class="text-amber-500 dark:text-amber-400 truncate max-w-[140px] flex-none">{{ displayedStatus() }}</span>
+                    </span>
+                  }
+                  <span class="flex gap-0.5 flex-none">
                     <span class="w-1 h-1 bg-brand rounded-full animate-bounce [animation-delay:-0.3s]"></span>
                     <span class="w-1 h-1 bg-brand rounded-full animate-bounce [animation-delay:-0.15s]"></span>
                     <span class="w-1 h-1 bg-brand rounded-full animate-bounce"></span>
@@ -97,37 +106,50 @@
                 </button>
               </div>
               <!-- Content -->
-              <div class="flex-1 overflow-y-auto scrollbar-thin px-3 py-2 space-y-1 min-h-0">
-                @for (sa of skillActivities(); track sa.name) {
-                  <div
-                    class="flex flex-col py-0.5 px-1 -mx-1 rounded cursor-pointer hover:bg-gray-100 dark:hover:bg-zinc-800 transition-colors"
-                    (click)="toggleSkillExpanded(sa.name)"
-                  >
-                    <div class="flex items-center gap-1.5">
-                      <span class="text-brand text-xs flex-none leading-none">⚡</span>
-                      <span class="text-xs font-medium text-gray-700 dark:text-zinc-300 flex-1 truncate min-w-0">{{ sa.name }}</span>
-                      @if (sa.finished) {
-                        <svg class="w-3.5 h-3.5 text-green-500 flex-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
-                          <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
-                        </svg>
-                      } @else {
-                        <span class="flex gap-0.5 flex-none">
-                          <span class="w-1 h-1 bg-brand rounded-full animate-bounce [animation-delay:-0.3s]"></span>
-                          <span class="w-1 h-1 bg-brand rounded-full animate-bounce [animation-delay:-0.15s]"></span>
-                          <span class="w-1 h-1 bg-brand rounded-full animate-bounce"></span>
-                        </span>
-                      }
-                      <span class="text-[9px] text-gray-400 dark:text-zinc-600 flex-none">{{ expandedSkill() === sa.name ? '▲' : '▼' }}</span>
+              <div class="flex-1 overflow-y-auto scrollbar-thin px-3 py-2 space-y-0.5 min-h-0">
+                @for (group of skillTree(); track group.subagent) {
+
+                  @if (group.subagent) {
+                    <!-- Subagent group header -->
+                    <div class="flex items-center gap-1 pt-1 pb-0.5">
+                      <span class="text-violet-400 text-[10px] leading-none">🤖</span>
+                      <span class="text-[10px] font-semibold text-violet-400 truncate">{{ group.subagent }}</span>
                     </div>
-                    @if (expandedSkill() === sa.name) {
-                      <div class="mt-1 pl-4 space-y-0.5">
-                        @if (sa.description) {
-                          <p class="text-[10px] text-gray-500 dark:text-zinc-400 leading-snug">{{ sa.description }}</p>
+                  }
+
+                  @for (sa of group.skills; track $index) {
+                    <div
+                      class="flex flex-col py-0.5 px-1 -mx-1 rounded cursor-pointer hover:bg-gray-100 dark:hover:bg-zinc-800 transition-colors"
+                      [ngClass]="group.subagent ? 'ml-3 border-l border-violet-700/30 pl-2' : ''"
+                      (click)="toggleSkillExpanded(skillKey(sa))"
+                    >
+                      <div class="flex items-center gap-1.5">
+                        <span class="text-brand text-xs flex-none leading-none">⚡</span>
+                        <span class="text-xs font-medium text-gray-700 dark:text-zinc-300 flex-1 truncate min-w-0">{{ sa.name }}</span>
+                        @if (sa.finished) {
+                          <svg class="w-3.5 h-3.5 text-green-500 flex-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
+                          </svg>
+                        } @else {
+                          <span class="flex gap-0.5 flex-none">
+                            <span class="w-1 h-1 bg-brand rounded-full animate-bounce [animation-delay:-0.3s]"></span>
+                            <span class="w-1 h-1 bg-brand rounded-full animate-bounce [animation-delay:-0.15s]"></span>
+                            <span class="w-1 h-1 bg-brand rounded-full animate-bounce"></span>
+                          </span>
                         }
-                        <p class="text-[9px] text-gray-400 dark:text-zinc-500 font-mono">{{ formatDuration(sa.startTime, sa.endTime) }}</p>
+                        <span class="text-[9px] text-gray-400 dark:text-zinc-600 flex-none">{{ expandedSkill() === skillKey(sa) ? '▲' : '▼' }}</span>
                       </div>
-                    }
-                  </div>
+                      @if (expandedSkill() === skillKey(sa)) {
+                        <div class="mt-1 pl-4 space-y-0.5">
+                          @if (sa.description) {
+                            <p class="text-[10px] text-gray-500 dark:text-zinc-400 leading-snug">{{ sa.description }}</p>
+                          }
+                          <p class="text-[9px] text-gray-400 dark:text-zinc-500 font-mono">{{ formatDuration(sa.startTime, sa.endTime) }}</p>
+                        </div>
+                      }
+                    </div>
+                  }
+
                 }
               </div>
             }
@@ -154,7 +176,7 @@
   <!-- Message list -->
   <div
     #messageList
-    class="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-1 scrollbar-thin"
+    class="flex-1 min-h-0 overflow-x-hidden overflow-y-auto px-4 py-4 space-y-1 scrollbar-thin"
     [class.px-2]="compact"
     [class.py-2]="compact"
   >
@@ -171,10 +193,13 @@
       }
     }
     @if (streaming()) {
-      <div class="flex gap-1 px-4 pb-2">
+      <div class="flex items-center gap-1.5 px-4 pb-2">
         <span class="w-1.5 h-1.5 bg-brand rounded-full animate-bounce [animation-delay:-0.3s]"></span>
         <span class="w-1.5 h-1.5 bg-brand rounded-full animate-bounce [animation-delay:-0.15s]"></span>
         <span class="w-1.5 h-1.5 bg-brand rounded-full animate-bounce"></span>
+        @if (displayedStatus()) {
+          <span class="text-xs text-gray-400 dark:text-zinc-500 italic ml-1">{{ displayedStatus() }}</span>
+        }
       </div>
     }
   </div>

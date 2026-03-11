@@ -97,6 +97,8 @@ def _migrate_users_table() -> None:
             conn.execute(text("ALTER TABLE users ADD COLUMN thinking_enabled BOOLEAN DEFAULT 0"))
         if "thinking_budget" not in cols:
             conn.execute(text("ALTER TABLE users ADD COLUMN thinking_budget INTEGER DEFAULT 10000"))
+        if "expert_lookup_enabled" not in cols:
+            conn.execute(text("ALTER TABLE users ADD COLUMN expert_lookup_enabled BOOLEAN DEFAULT 0"))
 
 
 def create_tables() -> None:

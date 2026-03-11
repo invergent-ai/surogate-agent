@@ -135,6 +135,10 @@ export class MarkdownContentComponent implements OnChanges {
   @Input({ required: true }) text!: string;
   /** True once the streaming turn is complete — enables rendered view and toolbar. */
   @Input() finalized = true;
+  /** True when this text block is followed by tool calls in the same message turn.
+   *  Intermediary blocks are always rendered (no streaming cursor) and never show
+   *  the Raw / Copy / Download toolbar. */
+  @Input() intermediary = false;
 
   rawMode       = signal(false);
   copyFeedback  = signal(false);

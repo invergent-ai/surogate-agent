@@ -22,8 +22,9 @@ export class SettingsService {
   readonly vllmMinP           = signal<number | null>(null);
   readonly vllmPresencePenalty = signal<number | null>(null);
   readonly vllmContextLength   = signal<number | null>(null);
-  readonly thinkingEnabled     = signal<boolean>(false);
-  readonly thinkingBudget      = signal<number>(10000);
+  readonly thinkingEnabled        = signal<boolean>(false);
+  readonly thinkingBudget         = signal<number>(10000);
+  readonly expertLookupEnabled    = signal<boolean>(false);
 
   isConfigured(): boolean {
     const hasVllm = !!this.vllmUrl().trim();
@@ -53,6 +54,7 @@ export class SettingsService {
           this.vllmContextLength.set(user.vllm_context_length ?? null);
           this.thinkingEnabled.set(user.thinking_enabled ?? false);
           this.thinkingBudget.set(user.thinking_budget ?? 10000);
+          this.expertLookupEnabled.set(user.expert_lookup_enabled ?? false);
         }),
         map(() => void 0),
         catchError(() => of(void 0)),
@@ -74,6 +76,7 @@ export class SettingsService {
     vllmContextLength: number | null = null,
     thinkingEnabled: boolean = false,
     thinkingBudget: number = 10000,
+    expertLookupEnabled: boolean = false,
   ): Observable<void> {
     const token = this.auth.token();
     return this.http
@@ -90,6 +93,7 @@ export class SettingsService {
           vllm_context_length: vllmContextLength,
           thinking_enabled: thinkingEnabled,
           thinking_budget: thinkingBudget,
+          expert_lookup_enabled: expertLookupEnabled,
         },
         { headers: { Authorization: `Bearer ${token ?? ''}` } },
       )
@@ -108,6 +112,7 @@ export class SettingsService {
           this.vllmContextLength.set(user.vllm_context_length ?? vllmContextLength);
           this.thinkingEnabled.set(user.thinking_enabled ?? thinkingEnabled);
           this.thinkingBudget.set(user.thinking_budget ?? thinkingBudget);
+          this.expertLookupEnabled.set(user.expert_lookup_enabled ?? expertLookupEnabled);
         }),
         map(() => void 0),
       );

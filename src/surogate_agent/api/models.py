@@ -69,6 +69,7 @@ class SkillResponse(BaseModel):
     version: str
     role_restriction: Optional[str]
     allowed_tools: list[str]
+    experts: list[str]
     path: str
     skill_md_content: str
     helper_files: list[FileInfo]

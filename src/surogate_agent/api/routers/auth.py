@@ -114,4 +114,5 @@ def update_me(
         body.vllm_min_p, body.vllm_presence_penalty,
         body.vllm_context_length,
         body.thinking_enabled, body.thinking_budget,
+        body.expert_lookup_enabled,
     )

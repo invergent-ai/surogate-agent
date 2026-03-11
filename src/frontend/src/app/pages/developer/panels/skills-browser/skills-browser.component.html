@@ -116,6 +116,9 @@
         @for (tool of sk.allowed_tools; track tool) {
           <span class="text-[10px] px-1.5 py-0.5 bg-amber-100 dark:bg-amber-950/50 text-amber-700 dark:text-amber-400 rounded font-mono">{{ tool }}</span>
         }
+        @for (expert of sk.experts; track expert) {
+          <span class="text-[10px] px-1.5 py-0.5 bg-violet-100 dark:bg-violet-950/50 text-violet-700 dark:text-violet-400 rounded font-mono">{{ expert }}</span>
+        }
       </div>
 
       <!-- SKILL.md editor -->

@@ -55,6 +55,21 @@ def client(settings):
     mock_user.username = "testuser"
     mock_user.role = "developer"
     mock_user.is_active = True
+    # Set numeric/optional fields explicitly so fallback logic doesn't receive MagicMock
+    mock_user.model = ""
+    mock_user.api_key = ""
+    mock_user.openrouter_provider = ""
+    mock_user.vllm_url = ""
+    mock_user.vllm_tool_calling = True
+    mock_user.vllm_temperature = None
+    mock_user.vllm_top_k = None
+    mock_user.vllm_top_p = None
+    mock_user.vllm_min_p = None
+    mock_user.vllm_presence_penalty = None
+    mock_user.vllm_context_length = None
+    mock_user.thinking_enabled = False
+    mock_user.thinking_budget = 10000
+    mock_user.expert_lookup_enabled = False
 
     app = create_app()
     app.dependency_overrides[
@@ -412,9 +427,13 @@ class TestWorkspace:
         assert resp.status_code == 200
         assert resp.json()["skill"] == "alpha"
 
-    def test_get_workspace_missing(self, client):
+    def test_get_workspace_missing(self, client, settings):
+        # Missing workspace is auto-created; returns empty workspace instead of 404.
         resp = client.get("/api/workspace/no-such")
-        assert resp.status_code == 404
+        assert resp.status_code == 200
+        assert resp.json()["skill"] == "no-such"
+        assert resp.json()["files"] == []
+        assert (settings.workspace_dir / "no-such").is_dir()
 
     def test_delete_workspace(self, client, settings):
         self._make_workspace(settings, "remove-me")
@@ -590,7 +609,7 @@ class TestChat:
         mock.session.files = []
         mock_create_agent.return_value = mock
 
-        resp = client.post("/api/chat", json={"message": "Think!", "role": "user"})
+        resp = client.post("/api/chat", json={"message": "Think!", "role": "user", "thinking_enabled": True})
         assert resp.status_code == 200
         assert "thinking" in resp.text
 

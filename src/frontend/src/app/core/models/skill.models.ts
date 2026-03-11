@@ -17,6 +17,7 @@ export interface SkillResponse {
   version: string;
   role_restriction: string | null;
   allowed_tools: string[];
+  experts: string[];
   path: string;
   skill_md_content: string;
   helper_files: FileInfo[];

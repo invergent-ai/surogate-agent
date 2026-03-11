@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from surogate_agent.auth.database import Base
@@ -53,9 +53,44 @@ class User(Base):
     vllm_context_length: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     thinking_enabled: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True, default=False, server_default="0")
     thinking_budget: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, default=10000, server_default="10000")
+    # Expert feature — when True the skill-developer builtin receives expert catalog context
+    expert_lookup_enabled: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True, default=False, server_default="0")
 
     def __repr__(self) -> str:
         return f"<User id={self.id} username={self.username!r} role={self.role!r}>"
+
+
+class Expert(Base):
+    """A named sub-agent configuration owned by a user."""
+
+    __tablename__ = "experts"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # LLM configuration (mirrors User columns)
+    model: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, default="")
+    api_key: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True, default="")
+    openrouter_provider: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, default="")
+    vllm_url: Mapped[Optional[str]] = mapped_column(String(2048), nullable=True, default="")
+    vllm_tool_calling: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True, default=True)
+    vllm_temperature: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    vllm_top_k: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    vllm_top_p: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    vllm_min_p: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    vllm_presence_penalty: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    vllm_context_length: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    thinking_enabled: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True, default=False)
+    thinking_budget: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, default=10000)
+    # Optional constraint lists (JSON arrays stored as text; empty string = no restriction)
+    available_tools: Mapped[Optional[str]] = mapped_column(Text, nullable=True, default="[]")
+    available_skills: Mapped[Optional[str]] = mapped_column(Text, nullable=True, default="[]")
+    available_mcp_servers: Mapped[Optional[str]] = mapped_column(Text, nullable=True, default="[]")
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+
+    def __repr__(self) -> str:
+        return f"<Expert id={self.id} name={self.name!r} user_id={self.user_id}>"
 
 
 class SessionMetadata(Base):
