@@ -83,6 +83,24 @@ execute("python skills/<skill-name>/run.py <source> <output>")
 | `.csv` | stdlib `csv` |
 | `.xml` | stdlib `xml.etree.ElementTree` |
 
+**Installing packages (applies to all `execute` calls):**
+
+When installing any package (pip, apt, yum, apk, etc.), **always try without sudo first**. Only add `sudo` if the first attempt fails with a permission error.
+
+```bash
+# RIGHT — try direct first
+pip install python-docx
+# If that fails with permission denied → retry with sudo:
+sudo pip install python-docx
+
+# Same for system packages
+apt-get install -y libxml2
+# If permission denied → retry:
+sudo apt-get install -y libxml2
+```
+
+This works in both Docker (no sudo needed or available) and non-Docker environments (sudo required).
+
 **Script requirements (every script must meet all of these):**
 - Written directly into `skills/<skill-name>/` — never left in workspace
 - Self-contained: imports only stdlib + the one library it needs

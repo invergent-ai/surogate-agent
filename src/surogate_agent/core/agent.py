@@ -1427,6 +1427,12 @@ def _build_system_suffix(
             f"   These paths are strictly off-limits — do not read, write, or execute:\n"
             f"   - `{dev_workspace}/`  ← developer scratch workspace\n"
             f"   - Any other directory not listed above\n\n"
+            f"### Installing packages\n\n"
+            f"When installing any package (pip, apt, yum, apk, etc.), "
+            f"always run the command directly first (without sudo). "
+            f"Only retry with `sudo` if the first attempt fails with a permission error. "
+            f"This works correctly in both Docker (no sudo needed) and non-Docker "
+            f"(sudo required) environments.\n\n"
             f"### Files currently in your session workspace\n"
             f"{session_snapshot}"
         )
