@@ -27,15 +27,19 @@
             } @else {
               <!-- Full header -->
               <div class="flex-none flex items-center gap-2 px-3 py-1.5 border-b border-gray-200 dark:border-zinc-700">
-                <span class="text-[10px] font-semibold uppercase tracking-widest text-gray-400 dark:text-zinc-500">Agent activity</span>
+                <span class="flex-none text-[10px] font-semibold uppercase tracking-widest text-gray-400 dark:text-zinc-500">Agent activity</span>
                 @if (streaming()) {
                   @if (displayedStatus()) {
-                    <span class="flex items-center gap-1 min-w-0 overflow-hidden text-[10px] italic">
-                      @if (prevDisplayedStatus() && prevDisplayedStatus() !== displayedStatus()) {
-                        <span class="text-gray-400 dark:text-zinc-600 truncate max-w-[90px] flex-none">{{ prevDisplayedStatus() }}</span>
+                    <span class="flex-1 flex items-center gap-1 min-w-0 overflow-hidden text-[10px] italic">
+                      @if (prevPrevDisplayedStatus() && prevPrevDisplayedStatus() !== prevDisplayedStatus() && prevPrevDisplayedStatus() !== displayedStatus()) {
+                        <span class="text-gray-400 dark:text-zinc-600 truncate flex-shrink min-w-0">{{ prevPrevDisplayedStatus() }}</span>
                         <span class="text-gray-400 dark:text-zinc-600 flex-none">›</span>
                       }
-                      <span class="text-amber-500 dark:text-amber-400 truncate max-w-[140px] flex-none">{{ displayedStatus() }}</span>
+                      @if (prevDisplayedStatus() && prevDisplayedStatus() !== displayedStatus()) {
+                        <span class="text-gray-400 dark:text-zinc-600 truncate flex-shrink min-w-0">{{ prevDisplayedStatus() }}</span>
+                        <span class="text-gray-400 dark:text-zinc-600 flex-none">›</span>
+                      }
+                      <span class="text-amber-500 dark:text-amber-400 truncate flex-shrink min-w-0">{{ displayedStatus() }}</span>
                     </span>
                   }
                   <span class="flex gap-0.5 flex-none">

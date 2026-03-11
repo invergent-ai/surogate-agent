@@ -56,7 +56,7 @@ export interface SseTextData { text: string; }
 export interface SseDoneData { session_id: string; files: string[]; }
 export interface SseErrorData { detail: string; }
 export interface SseSkillUseData { name: string; description: string; }
-export interface SseSubagentActivityData { subagent: string; items: SubagentActivityItem[]; }
+export interface SseSubagentActivityData { subagent: string; items: SubagentActivityItem[]; partial?: boolean; }
 
 export type SseEvent =
   | { event: 'thinking';           data: SseThinkingData }

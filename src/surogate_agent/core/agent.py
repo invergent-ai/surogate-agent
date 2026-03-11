@@ -44,11 +44,30 @@ class _CapturingRunnable:
         self._expert_name = expert_name
 
     async def ainvoke(self, input, config=None, **kwargs):  # noqa: A002
-        result = await self._graph.ainvoke(input, config, **kwargs)
         queue = subagent_activity_queue.get(None)
+        final_state: dict = {}
+        try:
+            # Stream intermediate state updates so the SSE layer can emit real-time
+            # subagent activity events while the subagent is still running.
+            # Each yielded value (stream_mode="values") is the full accumulated state.
+            async for state in self._graph.astream(
+                input, config, stream_mode="values", **kwargs
+            ):
+                final_state = state
+                if queue is not None:
+                    messages = list(state.get("messages") or [])
+                    if messages:
+                        await queue.put((self._expert_name, messages, True))
+        except Exception:
+            # Fall back to ainvoke if streaming fails (e.g. graph doesn't support it)
+            final_state = await self._graph.ainvoke(input, config, **kwargs)
+
         if queue is not None:
-            await queue.put((self._expert_name, result.get("messages", [])))
-        return result
+            messages = list(final_state.get("messages") or [])
+            # Final (non-partial) entry — replaces all partials in the frontend
+            await queue.put((self._expert_name, messages, False))
+
+        return final_state
 
     def invoke(self, input, config=None, **kwargs):  # noqa: A002
         result = self._graph.invoke(input, config, **kwargs)
@@ -80,6 +99,75 @@ def _import_deepagents():
         raise ImportError(
             "deepagents is required: pip install surogate-agent"
         ) from exc
+
+
+def _build_capturing_gp_subagent(llm, backend, skill_sources: list[str]) -> dict | None:
+    """Build a ``CompiledSubAgent`` dict for the deepagents general-purpose subagent
+    wrapped in ``_CapturingRunnable``.
+
+    deepagents' ``create_deep_agent`` always injects its own built-in
+    "general-purpose" subagent first in ``all_subagents``.  When we add a
+    ``CompiledSubAgent`` with the same name *after* it, the dict comprehension in
+    ``_build_task_tool`` overwrites the built-in entry with ours — so the task
+    tool dispatches to our capturing wrapper instead of the unmonitored built-in.
+
+    The graph we build mirrors deepagents' own GP middleware stack (TodoList,
+    Filesystem, Skills, Summarization, AnthropicPromptCaching, PatchToolCalls)
+    but excludes ``SubAgentMiddleware`` to prevent infinite nesting.
+    """
+    try:
+        from langchain.agents import create_agent as _lc_create_agent
+        from langchain.agents.middleware import TodoListMiddleware
+        from deepagents.middleware.filesystem import FilesystemMiddleware
+        from deepagents.middleware.skills import SkillsMiddleware
+        from deepagents.middleware.summarization import (
+            SummarizationMiddleware,
+            _compute_summarization_defaults,
+        )
+        from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
+        from deepagents.middleware.patch_tool_calls import PatchToolCallsMiddleware
+        from deepagents.middleware.subagents import (
+            DEFAULT_GENERAL_PURPOSE_DESCRIPTION,
+            DEFAULT_SUBAGENT_PROMPT,
+        )
+    except ImportError:
+        return None
+
+    try:
+        summ_defaults = _compute_summarization_defaults(llm)
+        gp_middleware: list = [
+            TodoListMiddleware(),
+            FilesystemMiddleware(backend=backend),
+            SummarizationMiddleware(
+                model=llm,
+                backend=backend,
+                trigger=summ_defaults["trigger"],
+                keep=summ_defaults["keep"],
+                trim_tokens_to_summarize=None,
+                truncate_args_settings=summ_defaults["truncate_args_settings"],
+            ),
+            AnthropicPromptCachingMiddleware(unsupported_model_behavior="ignore"),
+            PatchToolCallsMiddleware(),
+        ]
+        if skill_sources:
+            gp_middleware.append(SkillsMiddleware(backend=backend, sources=skill_sources))
+
+        gp_graph = _lc_create_agent(
+            llm,
+            system_prompt=DEFAULT_SUBAGENT_PROMPT,
+            tools=[],
+            middleware=gp_middleware,
+            name="general-purpose",
+        )
+        log.debug("built capturing general-purpose subagent")
+        return {
+            "name": "general-purpose",
+            "description": DEFAULT_GENERAL_PURPOSE_DESCRIPTION,
+            "runnable": _CapturingRunnable(gp_graph, "general-purpose"),
+        }
+    except Exception as exc:
+        log.warning("could not build capturing general-purpose subagent: %s", exc)
+        return None
 
 
 def _convert_tools_to_responses_format(tools: list) -> list:
@@ -1069,6 +1157,16 @@ def create_agent(
     # Build expert subagents for user role only.  Developer role keeps
     # config.experts intact for the system-prompt catalog but gets no subagents.
     expert_subagents = _build_expert_subagents(config, role)
+
+    # Add a capturing wrapper for the built-in general-purpose subagent so its
+    # activity is forwarded via subagent_activity_queue (same as user-defined experts).
+    # Because we provide this as a CompiledSubAgent with name="general-purpose" *after*
+    # deepagents inserts its own built-in spec, our entry wins in the task tool's
+    # subagent_graphs dict (last key wins in dict comprehension).
+    if backend is not None:
+        gp_capturing = _build_capturing_gp_subagent(llm, backend, skill_sources)
+        if gp_capturing is not None:
+            expert_subagents = [*expert_subagents, gp_capturing]
 
     graph_kwargs: dict[str, Any] = dict(
         model=llm,

@@ -75,16 +75,18 @@ export class ChatComponent implements OnChanges, OnDestroy {
   agentStatus = signal<string>('');
 
   /** Debounced status shown in the UI — avoids flicker on rapid transitions. */
-  displayedStatus   = signal<string>('');
-  /** The status that was displayed just before the current one — used for the
-   *  "prev › current" breadcrumb in the agent activity header. */
-  prevDisplayedStatus = signal<string>('');
+  displayedStatus        = signal<string>('');
+  /** The status just before the current one (breadcrumb level 2). */
+  prevDisplayedStatus    = signal<string>('');
+  /** The status two steps back (breadcrumb level 1) — lets the header show
+   *  "pre-task › prev-subagent-status › current-subagent-status". */
+  prevPrevDisplayedStatus = signal<string>('');
 
   private _statusDebounceTimer: ReturnType<typeof setTimeout> | null = null;
-  /** Raw status value from the previous agentStatus change — captured immediately,
-   *  before the debounce fires, so the breadcrumb always reflects the last real
-   *  transition even when rapid changes collapse into one debounced update. */
-  private _prevRawStatus = '';
+  /** Sliding window of the last two raw status values captured synchronously
+   *  on every agentStatus change, before the debounce fires. */
+  private _prevRawStatus     = '';
+  private _prevPrevRawStatus = '';
 
   /** All thinking + tool_call blocks extracted from assistant messages for the side panel. */
   readonly thinkingBlocks = computed<(ThinkingBlock | ToolBlock)[]>(() => {
@@ -183,20 +185,21 @@ export class ChatComponent implements OnChanges, OnDestroy {
     effect(() => {
       this.hasMessages.emit(this.messages().length > 0);
     });
-    // Debounce agentStatus → displayedStatus so rapid transitions (e.g. tool_call
-    // immediately followed by tool_result) don't flicker.
-    // _prevRawStatus is captured synchronously on every raw change so the
-    // breadcrumb always shows the last real predecessor, not a stale early value.
+    // Debounce agentStatus → displayedStatus so rapid transitions don't flicker.
+    // On every raw change we shift the two-slot history window synchronously
+    // (before the timer fires) so the breadcrumb always captures the real
+    // predecessor chain even when rapid changes collapse into one debounced update.
     effect(() => {
       const next = this.agentStatus();
-      // Capture previous raw value BEFORE resetting the timer — this records the
-      // status just before this latest change, regardless of debounce collapsing.
-      const prevRaw = this._prevRawStatus;
-      this._prevRawStatus = next;
+      const prevRaw     = this._prevRawStatus;
+      const prevPrevRaw = this._prevPrevRawStatus;
+      // Shift window: prevPrev ← prev ← current
+      this._prevPrevRawStatus = this._prevRawStatus;
+      this._prevRawStatus     = next;
       if (this._statusDebounceTimer !== null) clearTimeout(this._statusDebounceTimer);
       this._statusDebounceTimer = setTimeout(() => {
         this._statusDebounceTimer = null;
-        // Always commit both so stale breadcrumbs can't persist across tool cycles.
+        this.prevPrevDisplayedStatus.set(prevPrevRaw);
         this.prevDisplayedStatus.set(prevRaw);
         this.displayedStatus.set(next);
       }, 180);
@@ -416,7 +419,11 @@ export class ChatComponent implements OnChanges, OnDestroy {
           } else {
             msg.blocks.push({ type: 'text', text: ev.data.text });
           }
-          if (this.agentStatus() !== 'Generating response…') this.agentStatus.set('Generating response…');
+          // Don't overwrite a task-delegation status with "Generating response…"
+          // (backend emits tool_call then text in the same SSE chunk)
+          if (!this._activeSubagent && this.agentStatus() !== 'Generating response…') {
+            this.agentStatus.set('Generating response…');
+          }
           break;
         case 'done':
           this.agentStatus.set('');
@@ -431,11 +438,12 @@ export class ChatComponent implements OnChanges, OnDestroy {
           this.filesChanged.emit(ev.data.files ?? []);
           break;
         case 'subagent_activity': {
-          // Attach subagent activity to the last 'task' tool_call block.
+          // Update subagent activity on the last 'task' tool_call block.
+          // Remove the `!subagentActivity` guard so incremental (partial) updates
+          // replace the previous partial result in real-time.
           const d = ev.data as SseSubagentActivityData;
           const saIdx = [...msg.blocks].reverse().findIndex(
             b => b.type === 'tool_call' && (b as ToolBlock).name === 'task'
-              && !(b as ToolBlock).subagentActivity
           );
           if (saIdx >= 0) {
             const realIdx = msg.blocks.length - 1 - saIdx;
@@ -444,8 +452,26 @@ export class ChatComponent implements OnChanges, OnDestroy {
               items: d.items,
             };
           }
-          // Extract skill reads from the subagent's tool_call items and add to skill tree
-          if (this.showSkillActivity) {
+          // Update agent status to show what the subagent is currently doing.
+          // The items list is cumulative; the last item reflects the current phase:
+          //   tool_call without result  → tool is still executing
+          //   tool_call with result     → tool done, waiting for LLM to process it
+          //   text / thinking           → LLM is generating a response
+          if (d.partial && this._activeSubagent) {
+            const lastItem = d.items[d.items.length - 1];
+            if (lastItem?.type === 'tool_call') {
+              if ('result' in lastItem) {
+                this.agentStatus.set(`${this._activeSubagent} subagent – waiting for LLM…`);
+              } else {
+                this.agentStatus.set(`${this._activeSubagent} subagent – running: ${lastItem.name}`);
+              }
+            } else if (lastItem?.type === 'text' || lastItem?.type === 'thinking') {
+              this.agentStatus.set(`${this._activeSubagent} subagent – generating response…`);
+            }
+          }
+          // Extract skill reads from the subagent's tool_call items and add to skill tree.
+          // Only update on the final (non-partial) event to avoid duplicate entries.
+          if (this.showSkillActivity && !d.partial) {
             const now = Date.now();
             const subagentSkills: SkillActivity[] = [];
             for (const item of d.items) {
@@ -465,7 +491,12 @@ export class ChatComponent implements OnChanges, OnDestroy {
               }
             }
             if (subagentSkills.length > 0) {
-              this.skillActivities.update(list => [...list, ...subagentSkills]);
+              // Replace any existing partial entries for this subagent so the
+              // final list reflects the complete execution without duplicates.
+              this.skillActivities.update(list => [
+                ...list.filter(s => s.subagent !== d.subagent),
+                ...subagentSkills,
+              ]);
             }
           }
           break;

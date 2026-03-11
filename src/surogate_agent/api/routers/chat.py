@@ -567,96 +567,149 @@ async def _stream_chat(
                 "maximum context", "too many tokens", "max_tokens",
             ))
 
+        import asyncio as _asyncio
+
         async def _drain_subagent_queue():
-            """Yield subagent_activity SSE events for all completed subagent calls."""
+            """Yield subagent_activity SSE events for all queued subagent updates.
+
+            Queue entries are 3-tuples (expert_name, messages, is_partial).
+            Partial entries are intermediate streaming updates; the final entry
+            has is_partial=False and signals that the subagent has finished.
+            """
             while not _sa_queue.empty():
                 try:
-                    expert_name, messages = _sa_queue.get_nowait()
+                    entry = _sa_queue.get_nowait()
+                    expert_name, messages = entry[0], entry[1]
+                    is_partial = entry[2] if len(entry) > 2 else False
                     activity = _extract_subagent_activity(expert_name, messages)
-                    log.debug("SSE subagent_activity: %s (%d items)", expert_name, len(activity["items"]))
+                    activity["partial"] = is_partial
+                    log.debug(
+                        "SSE subagent_activity: %s (%d items, partial=%s)",
+                        expert_name, len(activity["items"]), is_partial,
+                    )
                     yield _sse_event("subagent_activity", activity)
                 except Exception:
                     break
 
+        def _process_msg(msg):
+            """Yield SSE event dicts for a single LangGraph message."""
+            msg_type = (
+                msg.get("role") if isinstance(msg, dict)
+                else getattr(msg, "type", None)
+            )
+
+            if msg_type in ("ai", "assistant"):
+                content = (
+                    msg.get("content", "") if isinstance(msg, dict)
+                    else getattr(msg, "content", "")
+                )
+                tool_calls = (
+                    msg.get("tool_calls", []) if isinstance(msg, dict)
+                    else getattr(msg, "tool_calls", [])
+                )
+
+                if config.thinking_enabled:
+                    thinking = _extract_thinking(content) or _extract_openrouter_reasoning(msg)
+                    if thinking:
+                        log.trace("SSE thinking block (%d chars)", len(thinking))  # type: ignore[attr-defined]
+                        yield _sse_event("thinking", {"text": thinking})
+
+                for tc in tool_calls or []:
+                    name = (
+                        tc.get("name", "?") if isinstance(tc, dict)
+                        else getattr(tc, "name", "?")
+                    )
+                    args = (
+                        tc.get("args", {}) if isinstance(tc, dict)
+                        else getattr(tc, "args", {})
+                    )
+                    log.trace("SSE tool_call: %s args=%r", name, args)  # type: ignore[attr-defined]
+                    yield _sse_event("tool_call", {"name": name, "args": args})
+
+                text = _extract_content_text(content)
+                if text:
+                    inline_thinking, clean_text = _split_inline_thinking(text)
+                    if inline_thinking and config.thinking_enabled:
+                        log.trace("SSE thinking (inline <think> tag, %d chars)", len(inline_thinking))  # type: ignore[attr-defined]
+                        yield _sse_event("thinking", {"text": inline_thinking})
+                    display_text = clean_text if inline_thinking else text
+                    if display_text:
+                        log.trace("SSE text (%d chars)", len(display_text))  # type: ignore[attr-defined]
+                        yield _sse_event("text", {"text": display_text})
+
+            elif msg_type == "tool":
+                name = (
+                    msg.get("name", "?") if isinstance(msg, dict)
+                    else getattr(msg, "name", getattr(msg, "tool_call_id", "?"))
+                )
+                result_content = (
+                    msg.get("content", "") if isinstance(msg, dict)
+                    else getattr(msg, "content", "")
+                )
+                log.trace("SSE tool_result: %s (%d chars)", name, len(str(result_content)))  # type: ignore[attr-defined]
+                yield _sse_event(
+                    "tool_result",
+                    {"name": name, "result": str(result_content)[:500]},
+                )
+
         async def _run_agent(the_agent):
-            """Async generator that streams SSE events from one agent run."""
-            async for chunk in the_agent.astream(invoke_input, config=invoke_config):
-                for msg in _iter_messages(chunk):
-                    msg_id = (
-                        msg.get("id") if isinstance(msg, dict)
-                        else getattr(msg, "id", None)
-                    )
-                    if msg_id:
-                        if msg_id in rendered_ids:
-                            continue
-                        rendered_ids.add(msg_id)
+            """Async generator that streams SSE events with real-time subagent activity.
 
-                    msg_type = (
-                        msg.get("role") if isinstance(msg, dict)
-                        else getattr(msg, "type", None)
-                    )
+            Runs the agent in a background asyncio task and polls the subagent
+            activity queue every 100 ms so incremental subagent events are emitted
+            while the task tool is still executing (not just after it returns).
+            """
+            buf: _asyncio.Queue = _asyncio.Queue()
 
-                    if msg_type in ("ai", "assistant"):
-                        content = (
-                            msg.get("content", "") if isinstance(msg, dict)
-                            else getattr(msg, "content", "")
+            async def _agent_worker():
+                try:
+                    async for chunk in the_agent.astream(invoke_input, config=invoke_config):
+                        await buf.put(("chunk", chunk))
+                except Exception as exc:
+                    await buf.put(("error", exc))
+                finally:
+                    await buf.put(("done", None))
+
+            agent_task = _asyncio.create_task(_agent_worker())
+            try:
+                while True:
+                    # Drain SA queue — emits real-time subagent activity between chunks
+                    async for sa_event in _drain_subagent_queue():
+                        yield sa_event
+
+                    # Wait for next agent chunk (short timeout keeps SA queue responsive)
+                    try:
+                        kind, data = await _asyncio.wait_for(buf.get(), timeout=0.1)
+                    except _asyncio.TimeoutError:
+                        continue  # loop back, drain SA queue again
+
+                    if kind == "done":
+                        # Final drain after agent finishes
+                        async for sa_event in _drain_subagent_queue():
+                            yield sa_event
+                        break
+                    elif kind == "error":
+                        raise data
+
+                    # Process messages in this chunk
+                    for msg in _iter_messages(data):
+                        msg_id = (
+                            msg.get("id") if isinstance(msg, dict)
+                            else getattr(msg, "id", None)
                         )
-                        tool_calls = (
-                            msg.get("tool_calls", []) if isinstance(msg, dict)
-                            else getattr(msg, "tool_calls", [])
-                        )
+                        if msg_id:
+                            if msg_id in rendered_ids:
+                                continue
+                            rendered_ids.add(msg_id)
 
-                        if config.thinking_enabled:
-                            thinking = _extract_thinking(content) or _extract_openrouter_reasoning(msg)
-                            if thinking:
-                                log.trace("SSE thinking block (%d chars)", len(thinking))  # type: ignore[attr-defined]
-                                yield _sse_event("thinking", {"text": thinking})
-
-                        for tc in tool_calls or []:
-                            name = (
-                                tc.get("name", "?") if isinstance(tc, dict)
-                                else getattr(tc, "name", "?")
-                            )
-                            args = (
-                                tc.get("args", {}) if isinstance(tc, dict)
-                                else getattr(tc, "args", {})
-                            )
-                            log.trace("SSE tool_call: %s args=%r", name, args)  # type: ignore[attr-defined]
-                            yield _sse_event("tool_call", {"name": name, "args": args})
-
-                        text = _extract_content_text(content)
-                        if text:
-                            inline_thinking, clean_text = _split_inline_thinking(text)
-                            if inline_thinking and config.thinking_enabled:
-                                log.trace("SSE thinking (inline <think> tag, %d chars)", len(inline_thinking))  # type: ignore[attr-defined]
-                                yield _sse_event("thinking", {"text": inline_thinking})
-                            # When thinking is disabled, use clean_text (tags stripped).
-                            # When thinking is enabled, inline_thinking was separated out.
-                            display_text = clean_text if inline_thinking else text
-                            if display_text:
-                                log.trace("SSE text (%d chars)", len(display_text))  # type: ignore[attr-defined]
-                                yield _sse_event("text", {"text": display_text})
-
-                    elif msg_type == "tool":
-                        name = (
-                            msg.get("name", "?") if isinstance(msg, dict)
-                            else getattr(msg, "name", getattr(msg, "tool_call_id", "?"))
-                        )
-                        result_content = (
-                            msg.get("content", "") if isinstance(msg, dict)
-                            else getattr(msg, "content", "")
-                        )
-                        log.trace("SSE tool_result: %s (%d chars)", name, len(str(result_content)))  # type: ignore[attr-defined]
-                        yield _sse_event(
-                            "tool_result",
-                            {"name": name, "result": str(result_content)[:500]},
-                        )
-                        # If this was a task tool result, drain the subagent activity
-                        # queue so the frontend receives the expert's activity tree
-                        # immediately after the tool result.
-                        if name == "task":
-                            async for sa_event in _drain_subagent_queue():
-                                yield sa_event
+                        for sse_ev in _process_msg(msg):
+                            yield sse_ev
+            finally:
+                agent_task.cancel()
+                try:
+                    await agent_task
+                except _asyncio.CancelledError:
+                    pass
 
         try:
             # First attempt — normal flow.
