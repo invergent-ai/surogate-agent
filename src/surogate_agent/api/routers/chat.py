@@ -826,9 +826,9 @@ async def chat_endpoint(
     try:
         from surogate_agent.auth.database import SessionLocal
         from surogate_agent.auth.schemas import ExpertResponse
-        from surogate_agent.auth.service import list_experts
+        from surogate_agent.auth.service import list_all_experts
         with SessionLocal() as _db:
-            _db_experts = list_experts(_db, current_user.id)
+            _db_experts = list_all_experts(_db)
             for _exp in _db_experts:
                 _schema = ExpertResponse.model_validate(_exp)
                 experts_data.append(_schema.model_dump())

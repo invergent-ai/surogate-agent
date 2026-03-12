@@ -129,6 +129,17 @@ def list_experts(db: Session, user_id: int) -> list[Expert]:
     return db.query(Expert).filter(Expert.user_id == user_id).all()
 
 
+def list_all_experts(db: Session) -> list[Expert]:
+    """Return all experts across all users.
+
+    Experts are system-level configuration authored by developers and are
+    intended to be available to every user session, regardless of who created
+    them.  This is used by the chat endpoint so that real user sessions receive
+    the same expert subagents as a developer's "Test as User" session.
+    """
+    return db.query(Expert).all()
+
+
 def get_expert(db: Session, user_id: int, expert_id: int) -> Expert | None:
     return db.query(Expert).filter(Expert.user_id == user_id, Expert.id == expert_id).first()
 
