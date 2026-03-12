@@ -196,6 +196,9 @@
              border-l border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-950
              absolute top-0 bottom-0 right-0 z-40
              lg:static lg:shadow-none shadow-xl"
+      [style.position]="rightPanelWidth() === '100vw' ? 'absolute' : null"
+      [style.inset]="rightPanelWidth() === '100vw' ? '0' : null"
+      [style.z-index]="rightPanelWidth() === '100vw' ? '40' : null"
       [style.width]="rightPanelWidth()"
     >
       <div class="flex flex-col h-full" style="min-width: 14rem">

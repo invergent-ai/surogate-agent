@@ -21,8 +21,9 @@ const DESKTOP_SNAPS = [
 ] as const;
 
 const DESKTOP_SNAPS_RIGHT = [
-  { value: '20rem', label: 'Default' },
-  { value: '50vw',  label: 'Wide' },
+  { value: '20rem',  label: 'Default' },
+  { value: '50vw',   label: 'Wide' },
+  { value: '100vw',  label: 'Full' },
 ] as const;
 
 const MOBILE_SNAPS = [
