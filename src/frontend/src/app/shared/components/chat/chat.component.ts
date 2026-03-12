@@ -105,19 +105,21 @@ export class ChatComponent implements OnChanges, OnDestroy {
   /** Skills announced by the backend for the current turn; drives the skill activity panel. */
   skillActivities = signal<SkillActivity[]>([]);
 
-  /** Skills grouped by subagent (null = main agent). Used to render the skill tree. */
+  /** Skills in chronological order, grouped into consecutive runs by subagent.
+   *  Each run is a contiguous block of entries from the same source (null = main agent).
+   *  A new run starts whenever the source changes, preserving interleaved execution order. */
   readonly skillTree = computed<{ subagent: string | null; skills: SkillActivity[] }[]>(() => {
-    const MAIN = '__main__';
-    const groups = new Map<string, SkillActivity[]>();
+    const result: { subagent: string | null; skills: SkillActivity[] }[] = [];
     for (const sa of this.skillActivities()) {
-      const key = sa.subagent ?? MAIN;
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key)!.push(sa);
+      const key = sa.subagent ?? null;
+      const last = result[result.length - 1];
+      if (last && last.subagent === key) {
+        last.skills.push(sa);
+      } else {
+        result.push({ subagent: key, skills: [sa] });
+      }
     }
-    return [...groups.entries()].map(([key, skills]) => ({
-      subagent: key === MAIN ? null : key,
-      skills,
-    }));
+    return result;
   });
 
   // Panel visibility: eye icon toggles show/hide; slashed eye = hidden
@@ -491,12 +493,7 @@ export class ChatComponent implements OnChanges, OnDestroy {
               }
             }
             if (subagentSkills.length > 0) {
-              // Replace any existing partial entries for this subagent so the
-              // final list reflects the complete execution without duplicates.
-              this.skillActivities.update(list => [
-                ...list.filter(s => s.subagent !== d.subagent),
-                ...subagentSkills,
-              ]);
+              this.skillActivities.update(list => [...list, ...subagentSkills]);
             }
           }
           break;

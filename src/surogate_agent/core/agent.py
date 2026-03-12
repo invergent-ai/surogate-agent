@@ -101,7 +101,7 @@ def _import_deepagents():
         ) from exc
 
 
-def _build_capturing_gp_subagent(llm, backend, skill_sources: list[str]) -> dict | None:
+def _build_capturing_gp_subagent(llm, backend, skill_sources: list[str], extra_tools: list | None = None) -> dict | None:
     """Build a ``CompiledSubAgent`` dict for the deepagents general-purpose subagent
     wrapped in ``_CapturingRunnable``.
 
@@ -155,7 +155,7 @@ def _build_capturing_gp_subagent(llm, backend, skill_sources: list[str]) -> dict
         gp_graph = _lc_create_agent(
             llm,
             system_prompt=DEFAULT_SUBAGENT_PROMPT,
-            tools=[],
+            tools=list(extra_tools or []),
             middleware=gp_middleware,
             name="general-purpose",
         )
@@ -885,7 +885,7 @@ def _build_llm(
     )
 
 
-def _build_expert_subagents(config: AgentConfig, role: "Role") -> list:
+def _build_expert_subagents(config: AgentConfig, role: "Role", session: "Session", backend=None) -> list:
     """Build CompiledSubAgent dicts from ``config.experts``.
 
     Each expert becomes a compiled deepagents graph (its own LLM, skills, and
@@ -936,10 +936,39 @@ def _build_expert_subagents(config: AgentConfig, role: "Role") -> list:
             if config.user_skills_dir.exists():
                 expert_skill_sources.append(str(config.user_skills_dir))
 
-            # System prompt: enforce available_skills / available_tools constraints.
+            # System prompt: file-access rules (same as main user agent) +
+            # available_skills / available_tools constraints.
+            user_workspace = session.workspace_dir.resolve()
+            skills_root = config.user_skills_dir.resolve()
+            builtin_dir = _DEFAULT_SKILLS_DIR.resolve()
+            dev_workspace = config.dev_workspace_dir.resolve()
+            session_snapshot = _snapshot_session(user_workspace)
+            path_context = (
+                f"## File access rules\n\n"
+                f"### READ-WRITE paths — you may create, edit, and delete files here\n\n"
+                f"1. **Session workspace**  →  `{user_workspace}/`\n"
+                f"   This is the only place where user files exist.\n"
+                f"   Always resolve a filename the user mentions as "
+                f"`{user_workspace}/<filename>`.\n"
+                f"   If the user asks to process a file not listed below, tell them to\n"
+                f"   upload it to the session workspace first.\n\n"
+                f"### READ-ONLY paths — you may read but MUST NOT modify or delete\n\n"
+                f"2. **Skill files**  →  `{skills_root}/<skill-name>/`\n"
+                f"   The files that define your active skills (SKILL.md, templates, etc.).\n"
+                f"   You may read them to follow their instructions, but never modify or delete them.\n\n"
+                f"3. **Built-in skills**  →  `{builtin_dir}/`\n"
+                f"   Package-bundled skills — never write or delete these either.\n\n"
+                f"### FORBIDDEN — never access anything outside the paths above\n\n"
+                f"   These paths are strictly off-limits — do not read, write, or execute:\n"
+                f"   - `{dev_workspace}/`  ← developer scratch workspace\n"
+                f"   - Any other directory not listed above\n\n"
+                f"### Files currently in your session workspace\n"
+                f"{session_snapshot}"
+            )
+
             avail_skills: list[str] = expert_data.get("available_skills") or []
             avail_tools: list[str] = expert_data.get("available_tools") or []
-            constraint_parts: list[str] = []
+            constraint_parts: list[str] = [path_context]
             if avail_skills:
                 skill_list = ", ".join(f"`{s}`" for s in avail_skills)
                 constraint_parts.append(
@@ -952,13 +981,17 @@ def _build_expert_subagents(config: AgentConfig, role: "Role") -> list:
                     f"You may only use the following tools: {tool_list}. "
                     "Do not call any other tool."
                 )
-            expert_system_prompt = "\n\n".join(constraint_parts) or None
+            expert_system_prompt = "\n\n".join(constraint_parts)
 
-            expert_graph = create_deep_agent(
+            expert_graph_kwargs: dict = dict(
                 model=expert_llm,
+                tools=list(config.extra_tools or []),
                 skills=expert_skill_sources or None,
                 system_prompt=expert_system_prompt,
             )
+            if backend is not None:
+                expert_graph_kwargs["backend"] = backend
+            expert_graph = create_deep_agent(**expert_graph_kwargs)
 
             subagents.append({
                 "name": expert_name,
@@ -1156,7 +1189,7 @@ def create_agent(
 
     # Build expert subagents for user role only.  Developer role keeps
     # config.experts intact for the system-prompt catalog but gets no subagents.
-    expert_subagents = _build_expert_subagents(config, role)
+    expert_subagents = _build_expert_subagents(config, role, session, backend=backend)
 
     # Add a capturing wrapper for the built-in general-purpose subagent so its
     # activity is forwarded via subagent_activity_queue (same as user-defined experts).
@@ -1164,7 +1197,7 @@ def create_agent(
     # deepagents inserts its own built-in spec, our entry wins in the task tool's
     # subagent_graphs dict (last key wins in dict comprehension).
     if backend is not None:
-        gp_capturing = _build_capturing_gp_subagent(llm, backend, skill_sources)
+        gp_capturing = _build_capturing_gp_subagent(llm, backend, skill_sources, extra_tools=config.extra_tools)
         if gp_capturing is not None:
             expert_subagents = [*expert_subagents, gp_capturing]
 
