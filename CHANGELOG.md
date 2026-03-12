@@ -1,5 +1,30 @@
 # Changelog
 
+## [3.0.0](https://github.com/invergent-ai/surogate-agent/compare/v2.0.0...v3.0.0) (2026-03-12)
+
+
+### ⚠ BREAKING CHANGES
+
+* Support for sub-agent experts
+
+### Features
+
+* Support for models deployed on vLLM, enable/disable thinking mode ([02a03b3](https://github.com/invergent-ai/surogate-agent/commit/02a03b38b2df71f1fec076a9198b0da48e23bd99))
+* Support for sub-agent experts ([9a7b1d2](https://github.com/invergent-ai/surogate-agent/commit/9a7b1d2e6ace62146c1bc5f5b5175d34ad0a1dd9))
+
+
+### Bug Fixes
+
+* added instructions for package installation ([92f8591](https://github.com/invergent-ai/surogate-agent/commit/92f85912b0300551bb3943bf403ed4f9164de62d))
+* cap workspace panel height to 50% ([0cf89bb](https://github.com/invergent-ai/surogate-agent/commit/0cf89bb6585f942fc9c6d61729b1c20e5995cc8c))
+* clear history determined session file reference loss ([1cad5d0](https://github.com/invergent-ai/surogate-agent/commit/1cad5d01f4dc9ef21e16cf15f137a321c1aeaa1c))
+* Fixed user agent access to experts ([e455536](https://github.com/invergent-ai/surogate-agent/commit/e4555368123e292db5b0e38d293877749ecdf9a6))
+* full width mode for right developer panel ([eb26f4b](https://github.com/invergent-ai/surogate-agent/commit/eb26f4b127519d2ebdeb075ca8fc888d7f7fb253))
+* make workspace panel scrollable ([244f391](https://github.com/invergent-ai/surogate-agent/commit/244f3910df9767e0bcd9d3745afd302a8894ee88))
+* openai thinking mode ([5dbd469](https://github.com/invergent-ai/surogate-agent/commit/5dbd469980136b69390ef5a778a0b24cd0c34fd4))
+* subagent access to backends and tools ([4faa0e0](https://github.com/invergent-ai/surogate-agent/commit/4faa0e0dc38f98463e589f36d9cb63522ccebec1))
+* track general-purpose subagent activity ([d513a50](https://github.com/invergent-ai/surogate-agent/commit/d513a503643d3a2af06e93cc78bcd541320d1364))
+
 ## [2.0.0](https://github.com/invergent-ai/surogate-agent/compare/v1.3.1...v2.0.0) (2026-03-08)
 
 
