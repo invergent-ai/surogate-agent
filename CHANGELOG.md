@@ -1,5 +1,14 @@
 # Changelog
 
+## [3.0.1](https://github.com/invergent-ai/surogate-agent/compare/v3.0.0...v3.0.1) (2026-03-13)
+
+
+### Bug Fixes
+
+* ensure context trimming only when using vLLM ([c20e093](https://github.com/invergent-ai/surogate-agent/commit/c20e09358e00ecbe8f9d5012f0ac3297e6871c9a))
+* fixed for dev chat losing historic messages ([0a20d66](https://github.com/invergent-ai/surogate-agent/commit/0a20d666fa135a0501287628cbce9facef702003))
+* removed duplicate bouncing message animation ([533b35d](https://github.com/invergent-ai/surogate-agent/commit/533b35db9c46e46528c5772669c949b691bd3413))
+
 ## [3.0.0](https://github.com/invergent-ai/surogate-agent/compare/v2.0.0...v3.0.0) (2026-03-12)
 
 
