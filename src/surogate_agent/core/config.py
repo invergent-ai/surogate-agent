@@ -109,9 +109,12 @@ class AgentConfig:
     vllm_top_p: Optional[float] = None
     vllm_min_p: Optional[float] = None
     vllm_presence_penalty: Optional[float] = None
-    # Max context length of the model in tokens. When set, the user message is
-    # truncated (with a ~2000-token overhead reserve) so the request fits in the
-    # model's context window.  Uses a 4 chars-per-token approximation.
+    # Max context length of the model in tokens. Only applied when vllm_base_url
+    # is also set (vLLM / self-hosted endpoint). When both are set, new messages
+    # and stored history are trimmed so the request fits in the model's context
+    # window (with a ~3000-token overhead reserve for system prompt + tools).
+    # Uses a 4 chars-per-token approximation.  Has no effect for Claude, OpenAI,
+    # or OpenRouter — those providers manage context limits themselves.
     vllm_context_length: Optional[int] = None
     # Thinking / extended reasoning.  When True, extended thinking is requested
     # from the model where the API supports it:

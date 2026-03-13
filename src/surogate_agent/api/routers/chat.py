@@ -513,7 +513,7 @@ async def _stream_chat(
         # Uses 4 chars-per-token approximation; _VLLM_OVERHEAD_RESERVE tokens
         # are reserved for system prompt + tool schemas + model output.
         message_text = req.message
-        if config.vllm_context_length:
+        if config.vllm_context_length and config.vllm_base_url:
             max_chars = max(0, (config.vllm_context_length - _VLLM_OVERHEAD_RESERVE) * 4)
             if len(message_text) > max_chars:
                 log.warning(
@@ -554,7 +554,7 @@ async def _stream_chat(
 
         # Trim stored history so the full request (history + new message +
         # system/tools) fits inside the model's context window.
-        if config.vllm_context_length and checkpointer is not None and _checkpoint_tuple is not None:
+        if config.vllm_context_length and config.vllm_base_url and checkpointer is not None and _checkpoint_tuple is not None:
             await _trim_checkpoint_to_context(
                 checkpointer, invoke_config, _checkpoint_tuple, config.vllm_context_length,
             )
@@ -724,6 +724,7 @@ async def _stream_chat(
             except Exception as _stream_exc:
                 if (
                     config.vllm_context_length
+                    and config.vllm_base_url
                     and config.vllm_tool_calling
                     and _is_context_overflow(_stream_exc)
                 ):
