@@ -354,20 +354,20 @@ async def _stream_chat(
             session.workspace_dir.mkdir(parents=True, exist_ok=True)
 
         # Checkpointer — dedicated checkpoints.db, separate from the auth DB.
+        # Always use the persistent SQLite saver so history is continuous across
+        # requests.  Without this, the first request (no session_id yet) would
+        # use an ephemeral MemorySaver while subsequent requests (session_id
+        # received via the done event) would use SQLite — causing message 1 to
+        # be permanently lost from the checkpointed history.
         checkpointer = None
         _checkpointer_ctx = None
-        needs_checkpointer = (
-            (role == Role.DEVELOPER and (req.skill.strip() or req.session_id.strip()))
-            or (role == Role.USER and req.session_id)
-        )
-        if needs_checkpointer:
-            try:
-                from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
-                settings.checkpointer_db.parent.mkdir(parents=True, exist_ok=True)
-                _checkpointer_ctx = AsyncSqliteSaver.from_conn_string(str(settings.checkpointer_db))
-                checkpointer = await _checkpointer_ctx.__aenter__()
-            except ImportError:
-                pass
+        try:
+            from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+            settings.checkpointer_db.parent.mkdir(parents=True, exist_ok=True)
+            _checkpointer_ctx = AsyncSqliteSaver.from_conn_string(str(settings.checkpointer_db))
+            checkpointer = await _checkpointer_ctx.__aenter__()
+        except ImportError:
+            pass
 
         if checkpointer is None:
             try:
