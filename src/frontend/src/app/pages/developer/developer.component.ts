@@ -210,6 +210,7 @@ export class DeveloperComponent {
   onSkillDetailClosed() {
     if (this.skillTabs) this.skillTabs.inactivate();
     this.activeSkill.set('');
+    if (this.devChat) this.devChat.clearMessages();
     this.leftPanelWidth.set(this.bp.isMobile() ? '0px' : this.LEFT_DEFAULT);
   }
 
