@@ -1,5 +1,24 @@
 # Changelog
 
+## [3.1.0](https://github.com/invergent-ai/surogate-agent/compare/v3.0.0...v3.1.0) (2026-03-22)
+
+
+### Features
+
+* download as pdf button & esc key bindings ([8e5dc71](https://github.com/invergent-ai/surogate-agent/commit/8e5dc71aa717565d3b7319dfc7f92729fa1fb6ea))
+* redraw persisted skill chat history ([e1f230d](https://github.com/invergent-ai/surogate-agent/commit/e1f230d8ce2a28f806ef42c15d2a04b648ae466d))
+
+
+### Bug Fixes
+
+* allow .rtf files previewing ([95260bb](https://github.com/invergent-ai/surogate-agent/commit/95260bbb05fe40a73622eb76a2af7512228092b1))
+* allow doc/docx/rtf files preview in skill helper files section ([3a5a529](https://github.com/invergent-ai/surogate-agent/commit/3a5a52962adf98f1ceffc923b69e4cc6675a5461))
+* ensure context trimming only when using vLLM ([c20e093](https://github.com/invergent-ai/surogate-agent/commit/c20e09358e00ecbe8f9d5012f0ac3297e6871c9a))
+* fixed for dev chat losing historic messages ([0a20d66](https://github.com/invergent-ai/surogate-agent/commit/0a20d666fa135a0501287628cbce9facef702003))
+* guard user input files as RO ([9c864db](https://github.com/invergent-ai/surogate-agent/commit/9c864db57b47d008bb12f7521e3850986b6978e9))
+* removed duplicate bouncing message animation ([533b35d](https://github.com/invergent-ai/surogate-agent/commit/533b35db9c46e46528c5772669c949b691bd3413))
+* track input files in persisted session metadata instead of sessionStorage ([c241e60](https://github.com/invergent-ai/surogate-agent/commit/c241e60bd2357ccb4d690bbb2fe7549bff204d6f))
+
 ## [3.0.0](https://github.com/invergent-ai/surogate-agent/compare/v2.0.0...v3.0.0) (2026-03-12)
 
 
