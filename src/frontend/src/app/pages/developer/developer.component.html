@@ -175,6 +175,13 @@
           </p>
         </div>
       }
+      @if (activeSkill() && !chatHasMessages()) {
+        <div class="flex-none flex flex-col items-center justify-center text-center px-8 py-6">
+          <p class="text-sm text-gray-400 dark:text-zinc-500 max-w-xs">
+            No previous conversation found for <span class="font-mono">{{ activeSkill() }}</span>. Start chatting to build history.
+          </p>
+        </div>
+      }
       <app-chat
         class="flex-1 min-h-0"
         role="developer"
@@ -185,6 +192,7 @@
         (settingsRequired)="settingsOpen.set(true)"
         (hasMessages)="chatHasMessages.set($event)"
         (responseDone)="onAgentResponseDone()"
+        (messagesSnapshot)="onMessagesSnapshot($event)"
       />
     </main>
 

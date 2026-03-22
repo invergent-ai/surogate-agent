@@ -9,7 +9,9 @@ import { UserTestPanelComponent } from './panels/user-test-panel/user-test-panel
 import { SettingsPanelComponent } from '../../shared/components/settings-panel/settings-panel.component';
 import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/confirm-dialog.component';
 import { AuthService } from '../../core/services/auth.service';
+import { SessionsService } from '../../core/services/sessions.service';
 import { SettingsService } from '../../core/services/settings.service';
+import { ChatMessage } from '../../core/models/chat.models';
 import { ThemeService } from '../../core/services/theme.service';
 import { BreakpointService } from '../../core/services/breakpoint.service';
 import { FullscreenService } from '../../core/services/fullscreen.service';
@@ -74,6 +76,7 @@ export class DeveloperComponent {
 
   constructor(
     private auth: AuthService,
+    private sessionsService: SessionsService,
     private router: Router,
     readonly settings: SettingsService,
   ) {
@@ -140,11 +143,20 @@ export class DeveloperComponent {
   }
 
   onActiveSkillChange(name: string) {
-    // Only clear the chat when the active skill actually changes
+    // Only reload when the active skill actually changes
     if (this.activeSkill() !== name) {
       this.activeSkill.set(name);
       this.skillsBrowser.detailHeightPx.set(700);
-      if (this.devChat) this.devChat.clearMessages();
+
+      if (name && this.devChat) {
+        // Load persisted chat history for this skill and restore it visually.
+        this.sessionsService.getHistory(`dev:${name}`).subscribe(history => {
+          const msgs = history.messages as ChatMessage[];
+          this.devChat.restoreSession(msgs, `dev:${name}`);
+        });
+      } else if (this.devChat) {
+        this.devChat.clearMessages();
+      }
 
       // Sync the left-panel highlight (no-op if skill already shown)
       if (name && this.skillsBrowser) this.skillsBrowser.selectByName(name);
@@ -155,6 +167,12 @@ export class DeveloperComponent {
 
     this.skillsBrowser.deselect();
     this.onSkillDetailClosed();
+  }
+
+  onMessagesSnapshot(messages: unknown[]) {
+    const skill = this.activeSkill();
+    if (!skill || messages.length === 0) return;
+    this.sessionsService.saveHistory(`dev:${skill}`, messages).subscribe();
   }
 
   onSkillsLoaded(names: string[]) {
