@@ -10,7 +10,7 @@ import zipfile
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 
 from surogate_agent.api.deps import ServerSettings, settings_dep
@@ -340,6 +340,8 @@ def list_skill_files(name: str, settings: ServerSettings = Depends(settings_dep)
 def download_skill_file(
     name: str,
     file: str,
+    background_tasks: BackgroundTasks,
+    as_pdf: bool = Query(False, description="Convert doc/docx/rtf to PDF before returning"),
     settings: ServerSettings = Depends(settings_dep),
 ):
     registry = _build_registry(settings)
@@ -349,6 +351,17 @@ def download_skill_file(
     target = info.path / file
     if not target.is_file():
         raise HTTPException(status_code=404, detail=f"File '{file}' not found in skill '{name}'")
+    if as_pdf:
+        from surogate_agent.api.pdf_convert import convert_to_pdf, is_convertible
+        if not is_convertible(target):
+            raise HTTPException(status_code=400, detail=f"File '{file}' cannot be converted to PDF")
+        try:
+            pdf_path = convert_to_pdf(target)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+        pdf_name = target.stem + ".pdf"
+        background_tasks.add_task(shutil.rmtree, str(pdf_path.parent), True)
+        return FileResponse(str(pdf_path), filename=pdf_name, media_type="application/pdf", background=background_tasks)
     return FileResponse(str(target), filename=file)
 
 

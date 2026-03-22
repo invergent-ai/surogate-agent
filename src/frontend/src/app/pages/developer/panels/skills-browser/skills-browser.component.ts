@@ -212,6 +212,11 @@ export class SkillsBrowserComponent implements OnInit {
     return this.skillsService.downloadFile(sk.name, name);
   };
 
+  previewFile = (name: string) => {
+    const sk = this.selectedSkill()!;
+    return this.skillsService.previewFileAsPdf(sk.name, name);
+  };
+
   uploadFile = (file: File) => {
     const sk = this.selectedSkill()!;
     return this.skillsService.uploadFile(sk.name, file);

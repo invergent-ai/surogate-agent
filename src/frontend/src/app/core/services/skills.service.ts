@@ -46,6 +46,10 @@ export class SkillsService {
     return this.http.get(this.url(`/${skillName}/files/${fileName}`), { responseType: 'blob' });
   }
 
+  previewFileAsPdf(skillName: string, fileName: string): Observable<Blob> {
+    return this.http.get(this.url(`/${skillName}/files/${fileName}?as_pdf=true`), { responseType: 'blob' });
+  }
+
   uploadFile(skillName: string, file: File, force = false): Observable<unknown> {
     const form = new FormData();
     form.append('upload', file);
