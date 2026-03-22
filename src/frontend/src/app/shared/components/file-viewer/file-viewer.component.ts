@@ -1,6 +1,7 @@
 import {
   Component, Input, Output, EventEmitter,
-  signal, OnChanges, OnDestroy, inject
+  signal, OnChanges, OnDestroy, inject,
+  ViewChild, ElementRef, AfterViewChecked,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -20,15 +21,19 @@ const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', '
   imports: [CommonModule, FormsModule, PythonEditorComponent],
   templateUrl: './file-viewer.component.html',
 })
-export class FileViewerComponent implements OnChanges, OnDestroy {
+export class FileViewerComponent implements OnChanges, OnDestroy, AfterViewChecked {
   @Input() content = '';
   @Input() blob?: Blob;
   @Input() fileName = '';
   @Input() readOnly = false;
   @Output() saved = new EventEmitter<string>();
 
+  @ViewChild('fullscreenOverlay') private _overlayRef?: ElementRef<HTMLElement>;
+
   private readonly fullscreenSvc = inject(FullscreenService);
   private readonly sanitizer     = inject(DomSanitizer);
+
+  private _shouldFocusOverlay = false;
 
   editedContent = signal('');
   dirty         = signal(false);
@@ -98,9 +103,17 @@ export class FileViewerComponent implements OnChanges, OnDestroy {
     this.dirty.set(false);
   }
 
+  ngAfterViewChecked() {
+    if (this._shouldFocusOverlay && this._overlayRef) {
+      this._overlayRef.nativeElement.focus();
+      this._shouldFocusOverlay = false;
+    }
+  }
+
   openFullscreen() {
     this.fullscreen.set(true);
     this.fullscreenSvc.open();
+    this._shouldFocusOverlay = true;
   }
 
   closeFullscreen() {
@@ -108,7 +121,20 @@ export class FileViewerComponent implements OnChanges, OnDestroy {
     this.fullscreenSvc.close();
   }
 
+  downloadBlob() {
+    if (!this.blob) return;
+    const url = URL.createObjectURL(this.blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = this.fileName;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   onKeydown(e: KeyboardEvent) {
-    if (e.key === 'Escape') this.closeFullscreen();
+    if (e.key === 'Escape') {
+      e.stopPropagation();
+      this.closeFullscreen();
+    }
   }
 }

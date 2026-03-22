@@ -1,4 +1,4 @@
-import { Component, ViewChild, inject, signal, effect, untracked } from '@angular/core';
+import { Component, ViewChild, inject, signal, effect, untracked, HostListener } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
 import { SkillTabsComponent } from '../../shared/components/skill-tabs/skill-tabs.component';
@@ -127,6 +127,16 @@ export class DeveloperComponent {
         ? (this.bp.isMobile() ? '50vw' : this.RIGHT_DEFAULT)
         : '0px'
     );
+  }
+
+  @HostListener('document:keydown', ['$event'])
+  onEscapeKey(e: KeyboardEvent) {
+    if (e.key !== 'Escape') return;
+    const mobile = this.bp.isMobile();
+    this.leftPanelWidth.set(mobile ? '0px' : this.LEFT_DEFAULT);
+    this.rightPanelWidth.set(mobile ? '0px' : this.RIGHT_DEFAULT);
+    this.skillsBrowser?.closeOpenFile();
+    this.workspacePanel?.closeOpenFile();
   }
 
   onActiveSkillChange(name: string) {

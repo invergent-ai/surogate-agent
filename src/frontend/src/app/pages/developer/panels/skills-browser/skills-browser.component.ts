@@ -1,5 +1,5 @@
 import {
-  Component, Output, EventEmitter, signal, OnInit, inject, ViewChild, ElementRef
+  Component, Output, EventEmitter, signal, OnInit, inject, ViewChild, ElementRef, HostListener
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -41,6 +41,9 @@ export class SkillsBrowserComponent implements OnInit {
   importing = signal(false);
 
   @ViewChild('importInput') importInputRef!: ElementRef<HTMLInputElement>;
+  @ViewChild(FileListComponent) private _fileList?: FileListComponent;
+
+  closeOpenFile(): void { this._fileList?.closeView(); }
 
   /** Height (px) of the skill-detail pane; adjusted by dragging the separator. */
   detailHeightPx = signal<number>(280);

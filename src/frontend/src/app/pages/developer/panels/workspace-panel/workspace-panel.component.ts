@@ -1,4 +1,4 @@
-import { Component, input, Output, EventEmitter, signal, computed, OnInit, inject, effect, untracked } from '@angular/core';
+import { Component, input, Output, EventEmitter, signal, computed, OnInit, inject, effect, untracked, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ConfirmDialogService } from '../../../../core/services/confirm-dialog.service';
 import { WorkspaceService } from '../../../../core/services/workspace.service';
@@ -14,6 +14,10 @@ import { FileListComponent } from '../../../../shared/components/file-list/file-
 export class WorkspacePanelComponent implements OnInit {
   readonly skill = input('');
   @Output() fileOpened = new EventEmitter<void>();
+
+  @ViewChild(FileListComponent) private _fileList?: FileListComponent;
+
+  closeOpenFile(): void { this._fileList?.closeView(); }
 
   files           = signal<FileInfo[]>([]);
   loading         = signal(false);

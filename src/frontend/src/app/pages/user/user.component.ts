@@ -1,14 +1,15 @@
 import {
-  Component, ViewChild, inject, signal, computed, OnInit, AfterViewInit
+  Component, ViewChild, ViewChildren, QueryList,
+  inject, signal, computed, OnInit, AfterViewInit, HostListener
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
 import { forkJoin } from 'rxjs';
 import { SessionsService } from '../../core/services/sessions.service';
+import { FileListComponent } from '../../shared/components/file-list/file-list.component';
 import { FileInfo, SessionMeta } from '../../core/models/session.models';
 import { ChatMessage } from '../../core/models/chat.models';
 import { ChatComponent } from '../../shared/components/chat/chat.component';
-import { FileListComponent } from '../../shared/components/file-list/file-list.component';
 import { SettingsPanelComponent } from '../../shared/components/settings-panel/settings-panel.component';
 import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/confirm-dialog.component';
 import { SessionsListComponent } from './sessions-list/sessions-list.component';
@@ -71,6 +72,7 @@ const MOBILE_SNAPS = [
 })
 export class UserComponent implements OnInit, AfterViewInit {
   @ViewChild(ChatComponent) chatComp!: ChatComponent;
+  @ViewChildren(FileListComponent) private _fileLists!: QueryList<FileListComponent>;
 
   readonly DESKTOP_SNAPS = DESKTOP_SNAPS;
   readonly MOBILE_SNAPS  = MOBILE_SNAPS;
@@ -194,6 +196,13 @@ export class UserComponent implements OnInit, AfterViewInit {
 
   refreshInputFiles()  { this._refreshFiles(); }
   refreshOutputFiles() { this._refreshFiles(); }
+
+  @HostListener('document:keydown', ['$event'])
+  onEscapeKey(e: KeyboardEvent) {
+    if (e.key !== 'Escape') return;
+    this.leftPanelWidth.set(this.bp.isMobile() ? '0px' : this.LEFT_DEFAULT);
+    this._fileLists?.forEach(fl => fl.closeView());
+  }
 
   expandLeftPanel() {
     this.leftPanelWidth.set(this.bp.isMobile() ? '100vw' : '50vw');
