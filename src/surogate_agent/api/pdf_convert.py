@@ -1,5 +1,5 @@
 """
-Utility for converting Office documents (doc/docx) to PDF using LibreOffice headless.
+Utility for converting Office documents (doc/docx/rtf) to PDF using LibreOffice headless.
 
 LibreOffice must be installed in the runtime environment.
 """
@@ -15,7 +15,7 @@ from surogate_agent.core.logging import get_logger
 
 log = get_logger(__name__)
 
-_CONVERTIBLE = frozenset([".doc", ".docx"])
+_CONVERTIBLE = frozenset([".doc", ".docx", ".rtf"])
 
 
 def is_convertible(path: Path) -> bool:

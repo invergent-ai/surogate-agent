@@ -16,9 +16,9 @@ const TEXT_EXTENSIONS = new Set([
 
 /** Extensions that can be previewed as a binary blob (image, PDF, Office docs). */
 const IMAGE_EXTENSIONS   = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico', 'avif']);
-const BINARY_EXTENSIONS  = new Set([...IMAGE_EXTENSIONS, 'pdf', 'doc', 'docx', 'ppt', 'pptx']);
+const BINARY_EXTENSIONS  = new Set([...IMAGE_EXTENSIONS, 'pdf', 'doc', 'docx', 'rtf', 'ppt', 'pptx']);
 /** Extensions that require server-side conversion to PDF before preview. */
-const CONVERT_EXTENSIONS = new Set(['doc', 'docx']);
+const CONVERT_EXTENSIONS = new Set(['doc', 'docx', 'rtf']);
 
 @Component({
   selector: 'app-file-list',

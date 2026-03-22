@@ -401,7 +401,7 @@ def download_session_file(
     session_id: str,
     file: str,
     background_tasks: BackgroundTasks,
-    as_pdf: bool = Query(False, description="Convert doc/docx to PDF before returning"),
+    as_pdf: bool = Query(False, description="Convert doc/docx/rtf to PDF before returning"),
     settings: ServerSettings = Depends(settings_dep),
 ):
     sm = _session_manager(settings)

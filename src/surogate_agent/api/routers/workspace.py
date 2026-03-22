@@ -117,7 +117,7 @@ def download_workspace_file(
     skill: str,
     file: str,
     background_tasks: BackgroundTasks,
-    as_pdf: bool = Query(False, description="Convert doc/docx to PDF before returning"),
+    as_pdf: bool = Query(False, description="Convert doc/docx/rtf to PDF before returning"),
     settings: ServerSettings = Depends(settings_dep),
 ):
     ws_dir = _resolve_skill_dir(settings.workspace_dir, skill)
