@@ -56,6 +56,7 @@ class PermissionGuardMixin:
         *args: Any,
         rw_paths: list[Path],
         ro_paths: list[Path],
+        ro_files: frozenset[Path] | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(*args, **kwargs)
@@ -65,11 +66,15 @@ class PermissionGuardMixin:
         self._root_dir: Path = Path(kwargs.get("root_dir", Path.cwd())).resolve()
         self._rw_paths: list[Path] = [p.resolve() for p in rw_paths]
         self._ro_paths: list[Path] = [p.resolve() for p in ro_paths]
+        # File-level read-only set — individual files protected from writes even
+        # when their parent directory is an rw_path (e.g. user-uploaded input files).
+        self._ro_files: frozenset[Path] = ro_files or frozenset()
         log.debug(
-            "PermissionGuardMixin active: root=%s rw=%s ro=%s",
+            "PermissionGuardMixin active: root=%s rw=%s ro=%s ro_files=%d",
             self._root_dir,
             [str(p) for p in self._rw_paths],
             [str(p) for p in self._ro_paths],
+            len(self._ro_files),
         )
 
     # ------------------------------------------------------------------
@@ -109,8 +114,22 @@ class PermissionGuardMixin:
             )
         return None
 
+    def _resolve_path(self, path: str) -> Path:
+        """Resolve *path* the same way the backend does — against root_dir."""
+        p = Path(path)
+        return (self._root_dir / p).resolve() if not p.is_absolute() else p.resolve()
+
     def _write_error(self, path: str) -> str | None:
         """Return an error string if writing *path* is denied, else ``None``."""
+        # File-level guard takes priority: input files are read-only even inside
+        # an otherwise writable directory (the session workspace).
+        if self._ro_files and self._resolve_path(path) in self._ro_files:
+            log.warning("backend write blocked (input file): %s", path)
+            return (
+                f"Error: Write access denied — '{Path(path).name}' is a "
+                "user-uploaded input file and is read-only. Write your output "
+                "to a new file instead of modifying the original."
+            )
         perm = self._permission_for(path)
         if perm == "ro":
             log.warning("backend write blocked (read-only path): %s", path)
@@ -186,20 +205,22 @@ class PermissionGuardMixin:
 def make_guarded_filesystem_backend(
     rw_paths: list[Path],
     ro_paths: list[Path],
+    ro_files: frozenset[Path] | None = None,
     **kwargs: Any,
 ):
-    """Return a ``FilesystemBackend`` instance guarded by *rw_paths*/*ro_paths*."""
+    """Return a ``FilesystemBackend`` instance guarded by *rw_paths*/*ro_paths*/*ro_files*."""
     from deepagents.backends.filesystem import FilesystemBackend
 
     class _GuardedFilesystemBackend(PermissionGuardMixin, FilesystemBackend):
         pass
 
-    return _GuardedFilesystemBackend(rw_paths=rw_paths, ro_paths=ro_paths, **kwargs)
+    return _GuardedFilesystemBackend(rw_paths=rw_paths, ro_paths=ro_paths, ro_files=ro_files, **kwargs)
 
 
 def make_guarded_local_shell_backend(
     rw_paths: list[Path],
     ro_paths: list[Path],
+    ro_files: frozenset[Path] | None = None,
     **kwargs: Any,
 ):
     """Return a ``LocalShellBackend`` instance guarded by *rw_paths*/*ro_paths*.
@@ -226,6 +247,23 @@ def make_guarded_local_shell_backend(
             cmd = command if isinstance(command, str) else str(command)
             has_destructive = any(tok in cmd for tok in _DESTRUCTIVE)
             if has_destructive:
+                # Check individual protected input files first.
+                for file_path in self._ro_files:
+                    file_str = str(file_path)
+                    if file_str in cmd:
+                        log.warning(
+                            "execute blocked: destructive command targets input file %s", file_str
+                        )
+                        return ExecuteResponse(
+                            output=(
+                                f"Error: Shell execution blocked — the command targets "
+                                f"'{file_path.name}', which is a user-uploaded input file "
+                                "and is read-only."
+                            ),
+                            exit_code=1,
+                            truncated=False,
+                        )
+                # Check read-only path prefixes.
                 for base in self._ro_paths:
                     base_str = str(base)
                     if base_str in cmd:
@@ -243,4 +281,4 @@ def make_guarded_local_shell_backend(
                         )
             return super().execute(command, **kw)  # type: ignore[misc]
 
-    return _GuardedLocalShellBackend(rw_paths=rw_paths, ro_paths=ro_paths, **kwargs)
+    return _GuardedLocalShellBackend(rw_paths=rw_paths, ro_paths=ro_paths, ro_files=ro_files, **kwargs)

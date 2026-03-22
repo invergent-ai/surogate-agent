@@ -471,6 +471,28 @@ async def _stream_chat(
             ]
             log.debug("user experts after filter: %s", [e.get("name") for e in config.experts])
 
+        # Populate read-only input files for the user agent so the backend guard
+        # blocks any attempt to overwrite user-uploaded files at the code level.
+        if role == Role.USER and session.workspace_dir.is_dir():
+            try:
+                import json as _json
+                from surogate_agent.auth.database import SessionLocal
+                from surogate_agent.auth.models import SessionInputFiles as _SIF
+                with SessionLocal() as _db:
+                    _rec = _db.query(_SIF).filter_by(session_id=session.session_id).first()
+                    if _rec:
+                        config.readonly_files = [
+                            session.workspace_dir / name
+                            for name in _json.loads(_rec.files_json)
+                            if (session.workspace_dir / name).is_file()
+                        ]
+                        log.debug(
+                            "input file guard: %d protected file(s) for session %s",
+                            len(config.readonly_files), session.session_id,
+                        )
+            except Exception as _exc:
+                log.debug("could not load input files for guard: %s", _exc)
+
         # Set up per-request subagent activity queue so _CapturingRunnable
         # can forward expert message histories back to this SSE stream.
         import asyncio as _asyncio

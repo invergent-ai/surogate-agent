@@ -1163,10 +1163,12 @@ def create_agent(
             make_guarded_filesystem_backend,
             make_guarded_local_shell_backend,
         )
+        guard_ro_files = frozenset(p.resolve() for p in config.readonly_files) if config.readonly_files else None
         if effective_allow_execute:
             backend = make_guarded_local_shell_backend(
                 rw_paths=guard_rw,
                 ro_paths=guard_ro,
+                ro_files=guard_ro_files,
                 root_dir=backend_root,
                 virtual_mode=False,
                 inherit_env=True,   # agent needs PATH, API keys, etc.
@@ -1176,6 +1178,7 @@ def create_agent(
             backend = make_guarded_filesystem_backend(
                 rw_paths=guard_rw,
                 ro_paths=guard_ro,
+                ro_files=guard_ro_files,
                 root_dir=backend_root,
                 virtual_mode=False,
             )

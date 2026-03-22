@@ -131,6 +131,10 @@ class AgentConfig:
     # When True (developer role only), inject expert catalog into the system prompt
     # so the skill-developer can write skills that delegate to experts.
     expert_lookup_enabled: bool = False
+    # Absolute paths of files that must never be written by the agent, even when
+    # their parent directory is an rw_path.  Populated at request time with the
+    # session's input files so the user agent cannot overwrite uploaded originals.
+    readonly_files: list[Path] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         # Always include the bundled builtin skills directory.
