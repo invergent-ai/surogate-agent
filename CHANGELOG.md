@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.1.1](https://github.com/invergent-ai/surogate-agent/compare/v3.1.0...v3.1.1) (2026-03-22)
+
+
+### Bug Fixes
+
+* clear messages on skill close ([cc4f412](https://github.com/invergent-ai/surogate-agent/commit/cc4f4125190ebfb5b6c51f2f37f61fbd1b32b899))
+
 ## [3.1.0](https://github.com/invergent-ai/surogate-agent/compare/v3.0.0...v3.1.0) (2026-03-22)
 
 
