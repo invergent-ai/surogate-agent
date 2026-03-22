@@ -71,6 +71,13 @@ export class SessionsService {
     return this.http.delete<{ deleted: string }>(this.url(`/${sessionId}/files/${encodeURIComponent(fileName)}`));
   }
 
+  getInputFiles(sessionId: string): Observable<string[]> {
+    return this.http.get<{ session_id: string; input_files: string[] }>(this.url(`/${sessionId}/input-files`)).pipe(
+      map(r => r.input_files),
+      catchError(() => of([])),
+    );
+  }
+
   // ── Session metadata endpoints ──────────────────────────────────────────
 
   /** List all sessions owned by the current user, ordered newest-first. */

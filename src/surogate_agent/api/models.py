@@ -136,6 +136,11 @@ class InputHistoryResponse(BaseModel):
     entries: list[str]
 
 
+class InputFilesResponse(BaseModel):
+    session_id: str
+    input_files: list[str]
+
+
 # ---------------------------------------------------------------------------
 # Skill import/export models
 # ---------------------------------------------------------------------------

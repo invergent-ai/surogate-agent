@@ -17,6 +17,7 @@ from surogate_agent.api.models import (
     ChatHistoryResponse,
     ChatHistorySaveRequest,
     FileInfo,
+    InputFilesResponse,
     InputHistoryResponse,
     InputHistorySaveRequest,
     SessionMetaCreate,
@@ -26,7 +27,7 @@ from surogate_agent.api.models import (
 )
 from surogate_agent.auth.database import get_db
 from surogate_agent.auth.jwt import get_current_user
-from surogate_agent.auth.models import ChatHistory, InputHistory, SessionMetadata, User
+from surogate_agent.auth.models import ChatHistory, InputHistory, SessionInputFiles, SessionMetadata, User
 from surogate_agent.core.logging import get_logger
 from surogate_agent.core.session import SessionManager
 
@@ -58,11 +59,14 @@ def _clean_db_records(session_id: str, user_id: str, db: DBSession) -> None:
     try:
         meta = db.query(SessionMetadata).filter_by(session_id=session_id, user_id=user_id).first()
         hist = db.query(ChatHistory).filter_by(session_id=session_id, user_id=user_id).first()
+        input_files = db.query(SessionInputFiles).filter_by(session_id=session_id).first()
         if meta:
             db.delete(meta)
         if hist:
             db.delete(hist)
-        if meta or hist:
+        if input_files:
+            db.delete(input_files)
+        if meta or hist or input_files:
             db.commit()
     except Exception:
         db.rollback()
@@ -378,6 +382,59 @@ def delete_session(
 
 
 # ---------------------------------------------------------------------------
+# Input-file tracking — server-side, survives re-login / multi-device
+# ---------------------------------------------------------------------------
+
+
+def _get_input_files_record(session_id: str, db: DBSession) -> SessionInputFiles | None:
+    try:
+        return db.query(SessionInputFiles).filter_by(session_id=session_id).first()
+    except Exception:
+        return None
+
+
+def _add_input_file(session_id: str, filename: str, db: DBSession) -> None:
+    try:
+        record = _get_input_files_record(session_id, db)
+        if record is None:
+            names: list[str] = [filename]
+            db.add(SessionInputFiles(session_id=session_id, files_json=json.dumps(names)))
+        else:
+            names = json.loads(record.files_json)
+            if filename not in names:
+                names.append(filename)
+                record.files_json = json.dumps(names)
+        db.commit()
+    except Exception:
+        db.rollback()
+        log.debug("_add_input_file: failed for session '%s' file '%s'", session_id, filename)
+
+
+def _remove_input_file(session_id: str, filename: str, db: DBSession) -> None:
+    try:
+        record = _get_input_files_record(session_id, db)
+        if record is None:
+            return
+        names = json.loads(record.files_json)
+        names = [n for n in names if n != filename]
+        record.files_json = json.dumps(names)
+        db.commit()
+    except Exception:
+        db.rollback()
+        log.debug("_remove_input_file: failed for session '%s' file '%s'", session_id, filename)
+
+
+@router.get("/{session_id}/input-files", response_model=InputFilesResponse)
+def get_session_input_files(
+    session_id: str,
+    db: DBSession = Depends(get_db),
+):
+    record = _get_input_files_record(session_id, db)
+    input_files: list[str] = json.loads(record.files_json) if record else []
+    return InputFilesResponse(session_id=session_id, input_files=input_files)
+
+
+# ---------------------------------------------------------------------------
 # Files — list
 # ---------------------------------------------------------------------------
 
@@ -439,6 +496,7 @@ async def upload_session_file(
     upload: UploadFile = File(...),
     filename: str = Query("", description="Override destination filename"),
     settings: ServerSettings = Depends(settings_dep),
+    db: DBSession = Depends(get_db),
 ):
     sm = _session_manager(settings)
     # create session if absent
@@ -448,6 +506,7 @@ async def upload_session_file(
     session.workspace_dir.mkdir(parents=True, exist_ok=True)
     content = await upload.read()
     target.write_bytes(content)
+    _add_input_file(session_id, dest_name, db)
     log.debug("session '%s': uploaded file '%s' (%d bytes)", session_id, dest_name, len(content))
     return {"uploaded": dest_name, "session_id": session_id, "size_bytes": len(content)}
 
@@ -462,6 +521,7 @@ def delete_session_file(
     session_id: str,
     file: str,
     settings: ServerSettings = Depends(settings_dep),
+    db: DBSession = Depends(get_db),
 ):
     sm = _session_manager(settings)
     session = sm.get_session(session_id)
@@ -474,5 +534,6 @@ def delete_session_file(
             detail=f"File '{file}' not found in session '{session_id}'",
         )
     target.unlink()
+    _remove_input_file(session_id, file, db)
     log.debug("session '%s': deleted file '%s'", session_id, file)
     return {"deleted": file}

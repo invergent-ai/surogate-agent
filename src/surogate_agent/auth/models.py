@@ -142,3 +142,20 @@ class InputHistory(Base):
 
     def __repr__(self) -> str:
         return f"<InputHistory session_id={self.session_id!r} user={self.user_id!r}>"
+
+
+class SessionInputFiles(Base):
+    """Tracks which files in a session workspace were uploaded by the user (input files).
+
+    Files not listed here were written by the agent (output files).
+    Stored server-side so the input/output split survives re-login and multi-device use.
+    """
+
+    __tablename__ = "session_input_files"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    session_id: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
+    files_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+
+    def __repr__(self) -> str:
+        return f"<SessionInputFiles session_id={self.session_id!r}>"
