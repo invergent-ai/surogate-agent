@@ -28,6 +28,13 @@ subagent_activity_queue: ContextVar[asyncio.Queue | None] = ContextVar(
     "subagent_activity_queue", default=None
 )
 
+# Per-request dict carrying HITL session context (thread_id, user_id).
+# Set by chat.py before agent creation; read by hitl/tools.py when a tool is
+# invoked so it can write HumanTask rows with the correct origin session info.
+hitl_session_context: ContextVar[dict | None] = ContextVar(
+    "hitl_session_context", default=None
+)
+
 
 class _CapturingRunnable:
     """Wraps a CompiledSubAgent graph so its final message history is forwarded
@@ -1112,18 +1119,30 @@ def create_agent(
     # FilesystemBackend (default) — file ops only (ls/read/write/edit/glob/grep).
     # The `execute` tool is present but returns a "not available" error.
     effective_allow_execute = config.allow_execute
-    if not effective_allow_execute and role == Role.USER:
+    # _loaded_user_skills: all user-visible skills loaded once for this request.
+    # Populated for USER role so downstream helpers (_user_skills_need_execute,
+    # _build_user_skill_catalog, skill_use SSE) share a single filesystem scan.
+    _loaded_user_skills = None
+    if role == Role.USER:
         # Collect all directories that are visible to user sessions — mirrors
         # the skill_sources logic above but without the developer-only builtin.
         user_skill_dirs: list[Path] = [config.user_skills_dir]
         for extra in config.skills_dirs:
             if extra != _DEFAULT_SKILLS_DIR and extra not in user_skill_dirs:
                 user_skill_dirs.append(extra)
-        effective_allow_execute = _user_skills_need_execute(user_skill_dirs)
-        if effective_allow_execute:
-            log.warning(
-                "auto-activating LocalShellBackend: a user skill declared 'execute' in allowed-tools"
-            )
+        # Load skills exactly once — reused for execute-detection, system-prompt
+        # catalog, and SSE skill_use events (via agent.loaded_user_skills).
+        from surogate_agent.skills.loader import SkillLoader
+        _loaded_user_skills = []
+        for _d in user_skill_dirs:
+            if _d.is_dir():
+                _loaded_user_skills.extend(SkillLoader(_d).load())
+        if not effective_allow_execute:
+            effective_allow_execute = _user_skills_need_execute(user_skill_dirs, skills=_loaded_user_skills)
+            if effective_allow_execute:
+                log.warning(
+                    "auto-activating LocalShellBackend: a user skill declared 'execute' in allowed-tools"
+                )
 
     # Build per-role path permission lists for the guarded backends.
     # DEVELOPER: read-write for user skills + dev workspace + both MCP dirs;
@@ -1187,7 +1206,17 @@ def create_agent(
         log.warning("could not import deepagents backend — falling back to deepagents default")
         backend = None  # fall back to deepagents default
 
-    system_suffix = _build_system_suffix(role_ctx, config, session, active_skill)
+    # Inject HITL tools for user-role agents so the agent can pause and route
+    # a task to another user via request_approval / send_report.
+    if role == Role.USER:
+        try:
+            from surogate_agent.hitl.tools import request_approval, request_files, send_report
+            config.extra_tools = [*config.extra_tools, request_approval, request_files, send_report]
+            log.debug("HITL tools injected: request_approval, request_files, send_report")
+        except Exception as _hitl_exc:
+            log.debug("HITL tools not available: %s", _hitl_exc)
+
+    system_suffix = _build_system_suffix(role_ctx, config, session, active_skill, user_skills=_loaded_user_skills)
     log.trace("system prompt suffix length: %d chars", len(system_suffix))  # type: ignore[attr-defined]
 
     # Build expert subagents for user role only.  Developer role keeps
@@ -1229,6 +1258,12 @@ def create_agent(
 
     from surogate_agent.middleware.role_guard import RoleGuardAgent
     agent = RoleGuardAgent(graph=graph, role_context=role_ctx, config=config, session=session)
+    # Expose the pre-loaded user skills so the chat router can emit skill_use
+    # SSE events without a redundant filesystem scan.
+    agent.loaded_user_skills = (
+        [s for s in _loaded_user_skills if not s.is_developer_only]
+        if _loaded_user_skills is not None else []
+    )
     log.info("agent ready: %r", agent)
     return agent
 
@@ -1246,25 +1281,33 @@ def _read_skill_md(skills_root: Path, skill_name: str) -> str:
         return ""
 
 
-def _build_user_skill_catalog(config: AgentConfig) -> str:
+def _build_user_skill_catalog(config: AgentConfig, skills=None) -> str:
     """Return a system-prompt section that enforces skill lookup before every response.
 
     Injected at the top of the USER mode system suffix so the agent always
     follows a skill-first decision procedure rather than answering directly.
-    """
-    from surogate_agent.skills.loader import SkillLoader
 
+    Parameters
+    ----------
+    skills:
+        Optional pre-loaded list of ``SkillInfo`` objects.  When provided the
+        filesystem scan is skipped entirely.
+    """
     skills_root = config.user_skills_dir.resolve()
-    user_skills = []
-    # Scan user_skills_dir and any extra configured dirs (excluding builtin).
-    for d in [config.user_skills_dir] + [
-        p for p in config.skills_dirs
-        if p.resolve() != _DEFAULT_SKILLS_DIR.resolve()
-    ]:
-        if d.is_dir():
-            for skill in SkillLoader(d).load():
-                if not skill.is_developer_only:
-                    user_skills.append(skill)
+    if skills is not None:
+        user_skills = [s for s in skills if not s.is_developer_only]
+    else:
+        from surogate_agent.skills.loader import SkillLoader
+        user_skills = []
+        # Scan user_skills_dir and any extra configured dirs (excluding builtin).
+        for d in [config.user_skills_dir] + [
+            p for p in config.skills_dirs
+            if p.resolve() != _DEFAULT_SKILLS_DIR.resolve()
+        ]:
+            if d.is_dir():
+                for skill in SkillLoader(d).load():
+                    if not skill.is_developer_only:
+                        user_skills.append(skill)
 
     if not user_skills:
         return ""
@@ -1280,16 +1323,18 @@ def _build_user_skill_catalog(config: AgentConfig) -> str:
         f"## Skill-first protocol — MANDATORY\n\n"
         f"You have the following skills available:\n\n"
         f"{skill_lines}\n\n"
-        f"**Before responding to any user message, you MUST:**\n\n"
-        f"1. Check whether the user's request matches one of the skills above.\n"
-        f"2. If a skill matches — use `read_file` to read its SKILL.md "
+        f"**Before responding to any user message:**\n\n"
+        f"1. Check whether the user's request **clearly and specifically** matches one of the skills above.\n"
+        f"   A match requires the user's intent to unambiguously align with a skill's stated purpose.\n"
+        f"   General conversation, greetings, and off-topic messages do **not** match any skill.\n"
+        f"   When in doubt, do NOT use a skill.\n"
+        f"2. If a skill clearly matches — use `read_file` to read its SKILL.md "
         f"and follow its instructions exactly for your response.\n"
         f"   Skill files are located at:\n"
         f"{skill_paths}\n"
-        f"3. If no skill matches — answer normally using your own knowledge.\n\n"
-        f"Never skip step 1. Even when the match seems obvious, always read the "
-        f"skill's SKILL.md before responding so you follow the exact instructions "
-        f"the developer defined.\n\n"
+        f"3. If no skill clearly matches — answer normally using your own knowledge.\n\n"
+        f"Only invoke a skill when the user is explicitly and unambiguously requesting "
+        f"what that skill does. If there is any doubt, skip the skill and answer directly.\n\n"
     )
 
 
@@ -1320,6 +1365,7 @@ def _build_system_suffix(
     config: AgentConfig,
     session: Session,
     active_skill: str = "",
+    user_skills=None,
 ) -> str:
     parts: list[str] = []
     skills_root = config.user_skills_dir.resolve()
@@ -1438,13 +1484,44 @@ def _build_system_suffix(
         # agent sometimes ignores skill instructions because the file-access
         # section (which comes later in the prompt) describes skill dirs as
         # read-only files — confusing the LLM about whether to use them.
-        skill_catalog = _build_user_skill_catalog(config)
+        skill_catalog = _build_user_skill_catalog(config, skills=user_skills)
         mcp_section = _build_mcp_file_output_section(config, str(user_workspace))
 
         parts.append(
             f"You are operating in USER mode.\n\n"
             f"{mcp_section}\n"
             f"{skill_catalog}"
+            f"## Human-in-the-loop (HITL) — mandatory confirmation\n\n"
+            f"You have access to `request_approval`, `request_files`, and `send_report` tools "
+            f"that route tasks to other users.\n\n"
+            f"**Tool selection — choose exactly one:**\n\n"
+            f"- `request_approval` → the user wants a **yes/no decision** from the recipient "
+            f"(\"send for approval\", \"get sign-off\", \"needs approval\", \"approve or reject\"). "
+            f"Recipient sees **Approve / Reject** buttons.\n"
+            f"- `request_files` → the user needs another user to **upload files** into this session "
+            f"(\"ask alice for the spreadsheet\", \"request the PDF from bob\"). "
+            f"Recipient sees a **multi-file upload form**; uploaded files land in this session's input files.\n"
+            f"- `send_report` → the user wants to **share information** with no decision required "
+            f"(\"send the report\", \"notify\", \"share the results\"). "
+            f"Recipient sees an **Acknowledge** button only.\n\n"
+            f"**Two-turn protocol — always required:**\n\n"
+            f"- **Turn 1 (this response):** Complete any requested work first (generate "
+            f"the content, run the analysis, create the file, etc.). Then summarise what "
+            f"you would send (recipient, title, description). End with \"Should I send "
+            f"this?\" **Do NOT call `request_approval` or `send_report` in this turn.** "
+            f"Your response must contain only text — zero HITL tool calls.\n"
+            f"- **Turn 2 (after user confirms):** Call the tool.\n\n"
+            f"**Skip Turn 1 only** when ALL of the following are true:\n"
+            f"  1. The user's message in the current turn is SOLELY about routing "
+            f"(no prior work is needed — nothing to create, calculate, or generate).\n"
+            f"  2. The user explicitly says to proceed right now "
+            f"(e.g. \"send it\", \"go ahead\", \"yes, route to alice\").\n"
+            f"  3. The content to send is already fully prepared.\n\n"
+            f"**Never skip Turn 1** when the message combines work with sending "
+            f"(e.g. \"create X and send to Y\", \"analyse Z and route to alice\"). "
+            f"Complete the work, present the result, then ask for confirmation.\n\n"
+            f"Never call `request_approval` or `send_report` in the same response "
+            f"as asking for confirmation — the tool call must wait for the next turn.\n\n"
             f"## File access rules\n\n"
             f"### READ-WRITE paths — you may create, edit, and delete files here\n\n"
             f"1. **Your session workspace**  →  `{user_workspace}/`\n"
@@ -1517,7 +1594,7 @@ def _build_system_suffix(
     return "\n\n".join(parts)
 
 
-def _user_skills_need_execute(skill_dirs: list[Path]) -> bool:
+def _user_skills_need_execute(skill_dirs: list[Path], skills=None) -> bool:
     """Return True if any skill in *skill_dirs* declares ``execute`` in its
     ``allowed-tools`` frontmatter.
 
@@ -1528,7 +1605,16 @@ def _user_skills_need_execute(skill_dirs: list[Path]) -> bool:
 
     All user-visible skill directories are checked (user_skills_dir plus any
     extra dirs supplied via AgentConfig.skills_dirs).
+
+    Parameters
+    ----------
+    skills:
+        Optional pre-loaded list of ``SkillInfo`` objects.  When provided the
+        filesystem scan is skipped entirely — caller is responsible for passing
+        the correct set of user-visible skills.
     """
+    if skills is not None:
+        return any("execute" in s.allowed_tools for s in skills)
     from surogate_agent.skills.loader import SkillLoader
     for d in skill_dirs:
         if not d.is_dir():

@@ -42,6 +42,11 @@ def get_user_by_email(db: Session, email: str) -> User | None:
     return db.query(User).filter(User.email == email).first()
 
 
+def get_all_users(db: Session) -> list[User]:
+    """Return all active users ordered by username."""
+    return db.query(User).filter(User.is_active == True).order_by(User.username).all()
+
+
 # ---------------------------------------------------------------------------
 # User creation
 # ---------------------------------------------------------------------------

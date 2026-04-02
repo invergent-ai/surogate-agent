@@ -61,6 +61,17 @@ export class SettingsService {
       );
   }
 
+  /** Return all registered users with their LLM settings (developer-only). */
+  getUsers(): Observable<UserResponse[]> {
+    const token = this.auth.token();
+    if (!token) return of([]);
+    return this.http
+      .get<UserResponse[]>(`${this.config.apiUrl}/auth/users`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      .pipe(catchError(() => of([])));
+  }
+
   /** Persist all LLM settings to the server and update local signals. */
   saveSettings(
     model: string,

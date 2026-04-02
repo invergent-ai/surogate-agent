@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 
 class ChatRequest(BaseModel):
     message: str
+    images: list[str] = Field(default_factory=list)  # base64 data URIs for multimodal input
     role: str = "user"
     session_id: str = ""
     skill: str = ""
@@ -32,8 +33,8 @@ class ChatRequest(BaseModel):
     vllm_min_p: Optional[float] = None
     vllm_presence_penalty: Optional[float] = None
     vllm_context_length: Optional[int] = None
-    thinking_enabled: bool = False
-    thinking_budget: int = 10000
+    thinking_enabled: Optional[bool] = None   # None = not specified; use DB setting as fallback
+    thinking_budget: Optional[int] = None     # None = not specified; use DB setting as fallback
 
 
 class SkillCreateRequest(BaseModel):
@@ -139,6 +140,37 @@ class InputHistoryResponse(BaseModel):
 class InputFilesResponse(BaseModel):
     session_id: str
     input_files: list[str]
+
+
+# ---------------------------------------------------------------------------
+# Human-in-the-loop (HITL) task models
+# ---------------------------------------------------------------------------
+
+
+class HumanTaskResponse(BaseModel):
+    id: str
+    task_type: str          # "approval" | "report"
+    status: str             # "pending" | "completed" | "cancelled"
+    title: str
+    description: str
+    context: dict
+    assigned_to: str
+    assigned_by: str
+    created_at: str
+    responded_at: Optional[str]
+    response: Optional[dict]
+
+
+class TaskRespondRequest(BaseModel):
+    decision: Optional[str] = None      # "approved" | "rejected" — for approval tasks
+    acknowledged: Optional[bool] = None  # for report tasks
+    feedback: str = ""
+
+
+class SessionLockResponse(BaseModel):
+    locked: bool
+    task_id: Optional[str]
+    task_type: Optional[str]  # "approval" | "report" — for frontend routing
 
 
 # ---------------------------------------------------------------------------

@@ -1,13 +1,40 @@
 @if (message.role === 'user') {
-  <!-- User message: compact right-aligned bubble -->
+  <!-- User message: right-aligned, images above the text bubble -->
   <div class="flex justify-end mb-4">
-    <div class="max-w-[80%] rounded-2xl rounded-br-sm px-4 py-2.5 bg-brand text-zinc-900 select-text">
+    <div class="max-w-[80%] flex flex-col gap-1.5 items-end">
       @for (block of message.blocks; track $index) {
-        @if (isText(block)) {
-          <p class="text-sm leading-relaxed whitespace-pre-wrap break-all">{{ block.text }}</p>
-        } @else if (isError(block)) {
-          <p class="text-sm text-red-700">⚠ {{ block.text }}</p>
+        @if (isImage(block)) {
+          <div class="relative group">
+            <img
+              [src]="block.dataUrl"
+              class="max-w-full rounded-xl max-h-64 object-contain bg-black/5 dark:bg-white/5"
+              alt="Attached image"
+            />
+            <button
+              (click)="downloadImage(block)"
+              class="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity
+                     flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium
+                     bg-black/60 text-white backdrop-blur-sm"
+              title="Download"
+            >
+              <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+              </svg>
+              Download
+            </button>
+          </div>
         }
+      }
+      @if (hasTextOrError()) {
+        <div class="rounded-2xl rounded-br-sm px-4 py-2.5 bg-brand text-zinc-900 select-text">
+          @for (block of message.blocks; track $index) {
+            @if (isText(block)) {
+              <p class="text-sm leading-relaxed whitespace-pre-wrap break-all">{{ block.text }}</p>
+            } @else if (isError(block)) {
+              <p class="text-sm text-red-700">⚠ {{ block.text }}</p>
+            }
+          }
+        </div>
       }
     </div>
   </div>
@@ -25,6 +52,45 @@
         <div class="flex items-start gap-2 px-3 py-2 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 text-red-600 dark:text-red-400 text-sm my-2">
           <svg class="mt-0.5 shrink-0" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
           <span>{{ block.text }}</span>
+        </div>
+      } @else if (isHitlResponse(block)) {
+        <!-- HITL task response — distinct bubble with left border accent -->
+        <div class="my-3 flex items-start gap-2.5">
+          <div class="mt-0.5 shrink-0 w-5 h-5 rounded-full bg-amber-500/20 border border-amber-500/40 flex items-center justify-center">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="text-amber-600 dark:text-amber-400">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+            </svg>
+          </div>
+          <div class="flex-1 rounded-xl rounded-tl-sm border border-amber-300/60 dark:border-amber-700/50 bg-amber-50/60 dark:bg-amber-950/20 px-3.5 py-2.5">
+            <p class="text-xs font-medium text-amber-700 dark:text-amber-400 mb-1">Task response</p>
+            <app-markdown-content
+              [text]="block.text"
+              [finalized]="true"
+              [intermediary]="false">
+            </app-markdown-content>
+          </div>
+        </div>
+      } @else if (isImage(block)) {
+        <!-- Agent-generated image preview -->
+        <div class="relative group my-3 inline-block max-w-full">
+          <img
+            [src]="block.dataUrl"
+            class="max-w-full rounded-xl max-h-96 object-contain border border-gray-200 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-900"
+            [alt]="block.fileName ?? 'Generated image'"
+          />
+          <div class="absolute inset-0 rounded-xl bg-black/0 group-hover:bg-black/10 dark:group-hover:bg-black/20 transition-colors pointer-events-none"></div>
+          <button
+            (click)="downloadImage(block)"
+            class="absolute bottom-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity
+                   flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium
+                   bg-black/60 text-white backdrop-blur-sm pointer-events-auto"
+            title="Download {{ block.fileName ?? 'image' }}"
+          >
+            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+            </svg>
+            {{ block.fileName ?? 'Download' }}
+          </button>
         </div>
       }
     }

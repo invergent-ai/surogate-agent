@@ -1,11 +1,12 @@
 import {
   Component, ViewChild, ViewChildren, QueryList,
-  inject, signal, computed, OnInit, AfterViewInit, HostListener
+  inject, signal, computed, OnInit, AfterViewInit, OnDestroy, HostListener
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
 import { forkJoin } from 'rxjs';
 import { SessionsService } from '../../core/services/sessions.service';
+import { TaskService } from '../../core/services/task.service';
 import { FileListComponent } from '../../shared/components/file-list/file-list.component';
 import { FileInfo, SessionMeta } from '../../core/models/session.models';
 import { ChatMessage } from '../../core/models/chat.models';
@@ -13,11 +14,13 @@ import { ChatComponent } from '../../shared/components/chat/chat.component';
 import { SettingsPanelComponent } from '../../shared/components/settings-panel/settings-panel.component';
 import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/confirm-dialog.component';
 import { SessionsListComponent } from './sessions-list/sessions-list.component';
+import { TaskListComponent } from '../../shared/components/task-list/task-list.component';
 import { AuthService } from '../../core/services/auth.service';
 import { ConfirmDialogService } from '../../core/services/confirm-dialog.service';
 import { SettingsService } from '../../core/services/settings.service';
 import { ThemeService } from '../../core/services/theme.service';
 import { BreakpointService } from '../../core/services/breakpoint.service';
+import { HumanTask } from '../../core/models/task.models';
 
 // ── Quirky name generator ────────────────────────────────────────────────────
 const ADJECTIVES = [
@@ -67,10 +70,11 @@ const MOBILE_SNAPS = [
     SettingsPanelComponent,
     ConfirmDialogComponent,
     SessionsListComponent,
+    TaskListComponent,
   ],
   templateUrl: './user.component.html',
 })
-export class UserComponent implements OnInit, AfterViewInit {
+export class UserComponent implements OnInit, AfterViewInit, OnDestroy {
   @ViewChild(ChatComponent) chatComp!: ChatComponent;
   @ViewChildren(FileListComponent) private _fileLists!: QueryList<FileListComponent>;
 
@@ -91,10 +95,21 @@ export class UserComponent implements OnInit, AfterViewInit {
   private _dragStartY = 0;
   private _dragStartH = 0;
 
-  leftPanelWidth = signal<string>('18rem');
+  leftPanelWidth  = signal<string>('18rem');
+  rightPanelOpen  = signal<boolean>(false);
+
+  /** HITL session lock state. */
+  sessionLocked  = signal(false);
+  lockTaskId     = signal<string | null>(null);
+  lockTaskType   = signal<string | null>(null);
+  private _lockPollTimer: ReturnType<typeof setInterval> | null = null;
+
+  /** Task currently shown in the chat task-detail panel. */
+  selectedTask   = signal<HumanTask | null>(null);
 
   readonly theme   = inject(ThemeService);
   readonly bp      = inject(BreakpointService);
+  readonly taskSvc = inject(TaskService);
   private confirmSvc = inject(ConfirmDialogService);
 
   constructor(
@@ -108,7 +123,12 @@ export class UserComponent implements OnInit, AfterViewInit {
   }
 
   ngOnInit() {
-    // Intentionally empty — session loading happens after the view is ready.
+    this.taskSvc.startNotifications();
+  }
+
+  ngOnDestroy() {
+    this.taskSvc.stopNotifications();
+    this._stopLockPolling();
   }
 
   ngAfterViewInit() {
@@ -216,6 +236,75 @@ export class UserComponent implements OnInit, AfterViewInit {
     );
   }
 
+  toggleRightPanel() {
+    this.rightPanelOpen.update(v => !v);
+  }
+
+  // ── HITL session lock ───────────────────────────────────────────────────────
+
+  onSessionLocked(event: { taskId: string }) {
+    this.sessionLocked.set(true);
+    this.lockTaskId.set(event.taskId);
+    this.taskSvc.getTask(event.taskId).subscribe({
+      next: t => {
+        this.lockTaskType.set(t.taskType);
+        // If the task is assigned to the same user (self-send), auto-open the
+        // task detail panel in the chat so they can respond immediately.
+        if (t.assignedTo === this.userId) {
+          this.selectedTask.set(t);
+          this.taskSvc.refresh();
+        }
+      },
+      error: () => {},
+    });
+    this.rightPanelOpen.set(true);
+    this._startLockPolling();
+  }
+
+  onTaskSelected(task: HumanTask) {
+    this.selectedTask.set(task);
+  }
+
+  onTaskDismissed() {
+    this.selectedTask.set(null);
+  }
+
+  onTaskResponded() {
+    this.selectedTask.set(null);
+    this.taskSvc.refresh();
+    this._refreshFiles();
+  }
+
+  private _startLockPolling() {
+    this._stopLockPolling();
+    this._lockPollTimer = setInterval(() => this._checkLock(), 5000);
+  }
+
+  private _stopLockPolling() {
+    if (this._lockPollTimer !== null) {
+      clearInterval(this._lockPollTimer);
+      this._lockPollTimer = null;
+    }
+  }
+
+  private _checkLock() {
+    const sid = this.sessionId();
+    if (!sid) return;
+    this.sessionsService.getSessionLock(sid).subscribe(lock => {
+      if (!lock.locked) {
+        this.sessionLocked.set(false);
+        this.lockTaskId.set(null);
+        this.lockTaskType.set(null);
+        this._stopLockPolling();
+        // Reload chat history so resumed agent output appears
+        const meta = this.sessions().find(s => s.sessionId === sid);
+        if (meta) this._activateSession(meta, true);
+        // Refresh task list
+        this.taskSvc.refresh();
+      }
+    });
+  }
+
   async clearChatHistory() {
     const sid = this.sessionId();
     if (!sid) return;
@@ -283,6 +372,32 @@ export class UserComponent implements OnInit, AfterViewInit {
     this.sessionId.set(meta.sessionId);
     this.inputFiles.set([]);
     this.outputFiles.set([]);
+
+    // Always close the task detail panel when switching sessions.
+    this.selectedTask.set(null);
+
+    // Reset lock state, then check DB — handles page reload while session is locked
+    this.sessionLocked.set(false);
+    this.lockTaskId.set(null);
+    this.lockTaskType.set(null);
+    this._stopLockPolling();
+    if (meta.sessionId) {
+      this.sessionsService.getSessionLock(meta.sessionId).subscribe(lock => {
+        if (lock.locked && lock.task_id) {
+          this.sessionLocked.set(true);
+          this.lockTaskId.set(lock.task_id);
+          this.lockTaskType.set(lock.task_type);
+          this._startLockPolling();
+          this.rightPanelOpen.set(true);
+          // If the locked task is assigned to the current user (self-send),
+          // auto-open the task detail panel so they can respond immediately.
+          this.taskSvc.getTask(lock.task_id).subscribe({
+            next: t => { if (t.assignedTo === this.userId) this.selectedTask.set(t); },
+            error: () => {},
+          });
+        }
+      });
+    }
 
     if (restoreMessages && this.chatComp) {
       this.sessionsService.getHistory(meta.sessionId).subscribe(history => {

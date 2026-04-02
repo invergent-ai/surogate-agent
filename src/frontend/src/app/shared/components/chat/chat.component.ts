@@ -4,25 +4,33 @@ import {
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Subscription } from 'rxjs';
+import { Subscription, forkJoin, map } from 'rxjs';
 import { ChatService } from '../../../core/services/chat.service';
 import { SessionsService } from '../../../core/services/sessions.service';
+import { WorkspaceService } from '../../../core/services/workspace.service';
 import { SettingsService } from '../../../core/services/settings.service';
 import { SkillsService } from '../../../core/services/skills.service';
 import { ToastService } from '../../../core/services/toast.service';
 import {
   ChatMessage, MessageBlock, SseEvent, ToolBlock, TextBlock, ThinkingBlock, SseSkillUseData,
-  SseSubagentActivityData,
+  SseSubagentActivityData, ImageBlock,
 } from '../../../core/models/chat.models';
+import { HumanTask } from '../../../core/models/task.models';
 import { MessageBubbleComponent } from '../message-bubble/message-bubble.component';
 import { ThinkingBlockComponent } from '../thinking-block/thinking-block.component';
 import { ToolCallBlockComponent } from '../tool-call-block/tool-call-block.component';
+import { ApprovalTaskComponent } from '../task-items/approval-task.component';
+import { ReportTaskComponent } from '../task-items/report-task.component';
+import { FileRequestTaskComponent } from '../task-items/file-request-task.component';
 
 let msgCounter = 0;
 function nextId() { return `msg-${++msgCounter}`; }
 
 // Regex to extract skill name from paths like "skills/foo/SKILL.md"
 const SKILL_PATH_RE = /skills\/([^/]+)\/SKILL\.md/;
+
+// Image file extensions recognised for in-chat preview
+const IMAGE_EXT_RE = /\.(png|jpe?g|gif|webp|svg|bmp|ico)$/i;
 
 interface SkillActivity {
   name: string;
@@ -36,12 +44,20 @@ interface SkillActivity {
 @Component({
   selector: 'app-chat',
   standalone: true,
-  imports: [CommonModule, FormsModule, MessageBubbleComponent, ThinkingBlockComponent, ToolCallBlockComponent],
+  imports: [CommonModule, FormsModule, MessageBubbleComponent, ThinkingBlockComponent, ToolCallBlockComponent, ApprovalTaskComponent, ReportTaskComponent, FileRequestTaskComponent],
   templateUrl: './chat.component.html',
+  styles: [`
+    @keyframes task-panel-up {
+      from { transform: translateY(100%); opacity: 0.8; }
+      to   { transform: translateY(0);    opacity: 1;   }
+    }
+    .task-panel-enter { animation: task-panel-up 0.22s cubic-bezier(0.16,1,0.3,1); }
+  `],
 })
 export class ChatComponent implements OnChanges, OnDestroy {
   @ViewChild('messageList')  private messageListRef!:  ElementRef<HTMLElement>;
   @ViewChild('thinkingList') private thinkingListRef?: ElementRef<HTMLElement>;
+  @ViewChild('fileInput')    private fileInputRef!:    ElementRef<HTMLInputElement>;
 
   @Input() role: 'developer' | 'user' = 'user';
   @Input() skill = '';
@@ -50,10 +66,24 @@ export class ChatComponent implements OnChanges, OnDestroy {
   @Input() compact = false;
   @Input() placeholder = 'Type a message…';
   @Input() showSkillActivity = false;
+  /** Optional model/API config overrides for this chat instance.
+   *  When set, these values take precedence over the logged-in user's saved settings.
+   *  Used by the "Test as User" panel to simulate a specific user's LLM config. */
+  @Input() chatOverrides: Partial<import('../../../core/models/chat.models').ChatRequest> = {};
+  /** When true, disables the chat input and shows a HITL lock banner. */
+  @Input() locked = false;
+  /** Task id associated with the current session lock (for the "View task" link). */
+  @Input() lockTaskId: string | null = null;
+  /** Task type of the lock task — "approval" | "report" — for correct routing. */
+  @Input() lockTaskType: string | null = null;
+  /** Task to display in the sliding task detail panel. Null = panel closed. */
+  @Input() activeTask: HumanTask | null = null;
 
   @Output() sessionCreated    = new EventEmitter<string>();
   @Output() skillDetected     = new EventEmitter<string>();
   @Output() filesChanged      = new EventEmitter<string[]>();
+  /** Emitted with the server-side filenames of images the user attached and uploaded via chat input. */
+  @Output() inputFilesUploaded = new EventEmitter<string[]>();
   @Output() settingsRequired  = new EventEmitter<void>();
   /** Emitted with true when the first message is added, false when messages are cleared. */
   @Output() hasMessages       = new EventEmitter<boolean>();
@@ -61,11 +91,19 @@ export class ChatComponent implements OnChanges, OnDestroy {
   @Output() messagesSnapshot  = new EventEmitter<unknown[]>();
   /** Emitted when the agent finishes a response turn (complete, error, or stop). */
   @Output() responseDone      = new EventEmitter<void>();
+  /** Emitted when a session_locked SSE event is received. */
+  @Output() sessionLocked     = new EventEmitter<{ taskId: string }>();
+  /** Emitted when the user closes the task detail panel. */
+  @Output() taskDismissed     = new EventEmitter<void>();
+  /** Emitted after the user responds to a task in the detail panel. */
+  @Output() taskResponded     = new EventEmitter<void>();
 
   messages = signal<ChatMessage[]>([]);
   streaming = signal(false);
   currentSessionId = signal('');
   inputText = signal('');
+  /** Data URLs of images staged for the next send. */
+  pendingImages = signal<string[]>([]);
 
   /**
    * Human-readable status of the current agent turn.
@@ -137,6 +175,7 @@ export class ChatComponent implements OnChanges, OnDestroy {
 
   private chatService  = inject(ChatService);
   private sessionsSvc  = inject(SessionsService);
+  private workspaceSvc = inject(WorkspaceService);
   private settings     = inject(SettingsService);
   private skillsSvc    = inject(SkillsService);
   private toast        = inject(ToastService);
@@ -161,6 +200,8 @@ export class ChatComponent implements OnChanges, OnDestroy {
   private _sentHistory: string[] = [];
   private _historyIndex = -1;   // -1 = not browsing (showing draft)
   private _draftText    = '';   // saved draft while browsing history
+  /** Filenames of images the user uploaded via chat input — excluded from agent-output injection. */
+  private _uploadedInputImages = new Set<string>();
 
   onDividerMouseDown(e: MouseEvent) {
     e.preventDefault();
@@ -235,15 +276,15 @@ export class ChatComponent implements OnChanges, OnDestroy {
   hasVisibleContent(msg: ChatMessage): boolean {
     return msg.role === 'user'
       || !msg.finalized
-      || msg.blocks.some(b => b.type === 'text' || b.type === 'error');
+      || msg.blocks.some(b => b.type === 'text' || b.type === 'error' || b.type === 'image' || b.type === 'hitl_response');
   }
 
   send() {
     const text = this.inputText().trim();
-    if (!text || this.streaming()) return;
+    if ((!text && this.pendingImages().length === 0) || this.streaming() || this.locked) return;
 
-    // Append to history, skip exact duplicate of the last entry.
-    if (!this._sentHistory.length || this._sentHistory[this._sentHistory.length - 1] !== text) {
+    // Append to history, skip exact duplicate of the last entry (only for non-empty text).
+    if (text && (!this._sentHistory.length || this._sentHistory[this._sentHistory.length - 1] !== text)) {
       this._sentHistory.push(text);
       if (this._sentHistory.length > this.HISTORY_LIMIT) this._sentHistory.shift();
     }
@@ -264,11 +305,37 @@ export class ChatComponent implements OnChanges, OnDestroy {
       return;
     }
 
+    const images = this.pendingImages();
     this.inputText.set('');
+    this.pendingImages.set([]);
+
+    // Persist attached images to session/workspace storage
+    if (images.length > 0) {
+      const sessionId = this.currentSessionId();
+      const uploadedNames: string[] = [];
+      images.forEach((dataUrl, idx) => {
+        const file = this._dataUrlToFile(dataUrl, `input_image_${Date.now()}_${idx}`);
+        uploadedNames.push(file.name);
+        this._uploadedInputImages.add(file.name);
+        if (this.role === 'user' && sessionId) {
+          this.sessionsSvc.uploadFile(sessionId, file).subscribe();
+        } else if (this.role === 'developer') {
+          this.workspaceSvc.uploadFile(this.skill || '_root', file).subscribe();
+        }
+      });
+      // Notify parent of input filenames so they can be excluded from output lists.
+      if (uploadedNames.length > 0) this.inputFilesUploaded.emit(uploadedNames);
+      // Notify parent so the file list refreshes
+      this.filesChanged.emit([]);
+    }
     this.expandedSkill.set(null);
+    const userBlocks: MessageBlock[] = [
+      ...images.map(dataUrl => ({ type: 'image' as const, dataUrl }) satisfies ImageBlock),
+      { type: 'text', text },
+    ];
     this.messages.update(msgs => [
       ...msgs,
-      { id: nextId(), role: 'user', blocks: [{ type: 'text', text }], timestamp: new Date(), finalized: true },
+      { id: nextId(), role: 'user', blocks: userBlocks, timestamp: new Date(), finalized: true },
     ]);
 
     const assistantId = nextId();
@@ -284,9 +351,11 @@ export class ChatComponent implements OnChanges, OnDestroy {
 
     this.sub = this.chatService.streamChat({
       message: text,
+      images: images.length ? images : undefined,
       role: this.role,
       session_id: this.currentSessionId() || undefined,
       skill: this.skill || undefined,
+      ...this.chatOverrides,
     }).subscribe({
       next: (ev: SseEvent) => this.handleEvent(ev, assistantId),
       error: (err) => {
@@ -343,6 +412,14 @@ export class ChatComponent implements OnChanges, OnDestroy {
     if (ev.event === 'done' || ev.event === 'error') {
       this.skillActivities.update(list => list.map(s => ({ ...s, finished: true, endTime: s.endTime ?? Date.now() })));
     }
+
+    // HITL: notify parent that this session is now locked
+    if (ev.event === 'session_locked') {
+      const taskId = ev.data.task_id ?? '';
+      if (taskId) this.sessionLocked.emit({ taskId });
+      return;
+    }
+
 
     // Each time the agent reads a SKILL.md file, add a new activity entry —
     // duplicates are intentional (ordered execution history, not a unique set).
@@ -438,6 +515,17 @@ export class ChatComponent implements OnChanges, OnDestroy {
             }
           }
           this.filesChanged.emit(ev.data.files ?? []);
+          // Inject previews for image files written/modified during this turn.
+          // The backend reports only new/modified files in new_files; fall back
+          // to all files when new_files is absent (older backend).
+          {
+            const candidates = (ev.data.new_files ?? ev.data.files ?? []);
+            const newImages = candidates
+              .filter(f => IMAGE_EXT_RE.test(f) && !this._uploadedInputImages.has(f));
+            if (newImages.length > 0) {
+              this._fetchAndInjectImages(assistantId, newImages);
+            }
+          }
           break;
         case 'subagent_activity': {
           // Update subagent activity on the last 'task' tool_call block.
@@ -524,6 +612,8 @@ export class ChatComponent implements OnChanges, OnDestroy {
   clearMessages() {
     this.messages.set([]);
     this.skillActivities.set([]);
+    this.pendingImages.set([]);
+    this._uploadedInputImages.clear();
     this.expandedSkill.set(null);
     // Generate a fresh ID so the backend opens a new LangGraph thread rather
     // than resuming the old checkpoint — prevents stale context after a skill switch.
@@ -536,6 +626,7 @@ export class ChatComponent implements OnChanges, OnDestroy {
     // Always reset transient state so switching to a new/empty session starts clean.
     this.skillActivities.set([]);
     this.expandedSkill.set(null);
+    this._uploadedInputImages.clear();
 
     // Advance msgCounter past any IDs already in the restored list so that
     // the first nextId() call after restore never collides with a restored
@@ -642,6 +733,50 @@ export class ChatComponent implements OnChanges, OnDestroy {
     }, 0);
   }
 
+  onPaste(e: ClipboardEvent) {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    const imageItems = Array.from(items).filter(i => i.type.startsWith('image/'));
+    if (!imageItems.length) return;
+    e.preventDefault();
+    for (const item of imageItems) {
+      const file = item.getAsFile();
+      if (file) this._readImageFile(file);
+    }
+  }
+
+  triggerFileInput() {
+    this.fileInputRef?.nativeElement.click();
+  }
+
+  onFileSelected(e: Event) {
+    const input = e.target as HTMLInputElement;
+    const files = input.files;
+    if (!files) return;
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
+      if (f.type.startsWith('image/')) this._readImageFile(f);
+    }
+    input.value = '';
+  }
+
+  removeImage(index: number) {
+    this.pendingImages.update(imgs => imgs.filter((_, i) => i !== index));
+  }
+
+  dismissTask() { this.taskDismissed.emit(); }
+
+  onTaskResponded() { this.taskResponded.emit(); }
+
+  private _readImageFile(file: File) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      this.pendingImages.update(imgs => [...imgs, dataUrl]);
+    };
+    reader.readAsDataURL(file);
+  }
+
   toggleAgentPanel() { this.agentPanelHidden.update(v => !v); }
   toggleSkillPanel() { this.skillPanelHidden.update(v => !v); }
 
@@ -677,6 +812,57 @@ export class ChatComponent implements OnChanges, OnDestroy {
     const ms = (endTime ?? Date.now()) - startTime;
     if (ms < 1000) return `${ms}ms`;
     return `${(ms / 1000).toFixed(1)}s`;
+  }
+
+  /** Fetch image files written by the agent and append them as ImageBlocks. */
+  private _fetchAndInjectImages(assistantId: string, fileNames: string[]) {
+    const sessionId = this.currentSessionId();
+    const fetchers = fileNames.map(name => {
+      if (this.role === 'developer') {
+        return this.workspaceSvc.downloadFile(this.skill || '_root', name).pipe(map(blob => ({ name, blob })));
+      } else if (this.role === 'user' && sessionId) {
+        return this.sessionsSvc.downloadFile(sessionId, name).pipe(map(blob => ({ name, blob })));
+      }
+      return null;
+    }).filter((f): f is NonNullable<typeof f> => f !== null);
+
+    if (!fetchers.length) return;
+
+    forkJoin(fetchers).subscribe({
+      next: results => {
+        const promises = results.map(({ name, blob }) =>
+          new Promise<ImageBlock>(resolve => {
+            const reader = new FileReader();
+            reader.onload = () => resolve({ type: 'image', dataUrl: reader.result as string, fileName: name });
+            reader.readAsDataURL(blob);
+          })
+        );
+        Promise.all(promises).then(imageBlocks => {
+          this.messages.update(msgs => {
+            const idx = msgs.findIndex(m => m.id === assistantId);
+            if (idx < 0) return msgs;
+            const copy = [...msgs];
+            copy[idx] = { ...copy[idx], blocks: [...copy[idx].blocks, ...imageBlocks] };
+            return copy;
+          });
+          this._emitSnapshot();
+          this.scrollToBottom();
+        });
+      },
+      error: () => { /* silently skip — image preview is best-effort */ },
+    });
+  }
+
+  /** Convert a base64 data URL to a File, inferring extension from MIME type. */
+  private _dataUrlToFile(dataUrl: string, baseName: string): File {
+    const [header, data] = dataUrl.split(',');
+    const mime = header.match(/:(.*?);/)?.[1] ?? 'image/png';
+    const ext = mime.split('/')[1]?.replace('jpeg', 'jpg') ?? 'png';
+    const name = `${baseName}.${ext}`;
+    const bytes = atob(data);
+    const arr = new Uint8Array(bytes.length);
+    for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
+    return new File([new Blob([arr], { type: mime })], name, { type: mime });
   }
 
   private scrollToBottom() {

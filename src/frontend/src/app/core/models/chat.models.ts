@@ -39,7 +39,19 @@ export interface ErrorBlock {
   text: string;
 }
 
-export type MessageBlock = ThinkingBlock | ToolBlock | TextBlock | ErrorBlock;
+export interface HitlResponseBlock {
+  type: 'hitl_response';
+  text: string;
+}
+
+export interface ImageBlock {
+  type: 'image';
+  dataUrl: string;
+  /** Original filename — present for agent-generated images, absent for user-attached ones. */
+  fileName?: string;
+}
+
+export type MessageBlock = ThinkingBlock | ToolBlock | TextBlock | ErrorBlock | ImageBlock | HitlResponseBlock;
 
 export interface ChatMessage {
   id: string;
@@ -53,10 +65,13 @@ export interface SseThinkingData { text: string; }
 export interface SseToolCallData { name: string; args: Record<string, unknown>; }
 export interface SseToolResultData { name: string; result: string; }
 export interface SseTextData { text: string; }
-export interface SseDoneData { session_id: string; files: string[]; }
+export interface SseDoneData { session_id: string; files: string[]; new_files?: string[]; }
 export interface SseErrorData { detail: string; }
 export interface SseSkillUseData { name: string; description: string; }
 export interface SseSubagentActivityData { subagent: string; items: SubagentActivityItem[]; partial?: boolean; }
+
+export interface SseSessionLockedData { task_id: string; message: string; }
+export interface SseHitlResponseData { text: string; }
 
 export type SseEvent =
   | { event: 'thinking';           data: SseThinkingData }
@@ -66,10 +81,13 @@ export type SseEvent =
   | { event: 'done';               data: SseDoneData }
   | { event: 'error';              data: SseErrorData }
   | { event: 'skill_use';          data: SseSkillUseData }
-  | { event: 'subagent_activity';  data: SseSubagentActivityData };
+  | { event: 'subagent_activity';  data: SseSubagentActivityData }
+  | { event: 'session_locked';     data: SseSessionLockedData }
+  | { event: 'hitl_response';      data: SseHitlResponseData };
 
 export interface ChatRequest {
   message: string;
+  images?: string[];
   role: 'developer' | 'user';
   session_id?: string;
   skill?: string;
@@ -77,6 +95,7 @@ export interface ChatRequest {
   user_id?: string;
   allow_execute?: boolean;
   api_key?: string;
+  openrouter_provider?: string;
   vllm_url?: string;
   vllm_tool_calling?: boolean;
   vllm_temperature?: number | null;

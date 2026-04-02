@@ -20,6 +20,7 @@ from surogate_agent.api.models import (
     InputFilesResponse,
     InputHistoryResponse,
     InputHistorySaveRequest,
+    SessionLockResponse,
     SessionMetaCreate,
     SessionMetaResponse,
     SessionMetaUpdate,
@@ -27,7 +28,7 @@ from surogate_agent.api.models import (
 )
 from surogate_agent.auth.database import get_db
 from surogate_agent.auth.jwt import get_current_user
-from surogate_agent.auth.models import ChatHistory, InputHistory, SessionInputFiles, SessionMetadata, User
+from surogate_agent.auth.models import ChatHistory, HumanTask, InputHistory, SessionInputFiles, SessionLock, SessionMetadata, User
 from surogate_agent.core.logging import get_logger
 from surogate_agent.core.session import SessionManager
 
@@ -453,7 +454,7 @@ def list_session_files(session_id: str, settings: ServerSettings = Depends(setti
 # ---------------------------------------------------------------------------
 
 
-@router.get("/{session_id}/files/{file}")
+@router.get("/{session_id}/files/{file:path}")
 def download_session_file(
     session_id: str,
     file: str,
@@ -516,7 +517,7 @@ async def upload_session_file(
 # ---------------------------------------------------------------------------
 
 
-@router.delete("/{session_id}/files/{file}")
+@router.delete("/{session_id}/files/{file:path}")
 def delete_session_file(
     session_id: str,
     file: str,
@@ -537,3 +538,29 @@ def delete_session_file(
     _remove_input_file(session_id, file, db)
     log.debug("session '%s': deleted file '%s'", session_id, file)
     return {"deleted": file}
+
+
+# ---------------------------------------------------------------------------
+# Session lock (HITL)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/{session_id}/lock", response_model=SessionLockResponse)
+def get_session_lock(
+    session_id: str,
+    db: DBSession = Depends(get_db),
+):
+    """Return the lock status of a session.
+
+    A session is locked when a HITL task is pending and the agent is
+    suspended waiting for a human response from another user.
+    """
+    lock = db.query(SessionLock).filter_by(session_id=session_id).first()
+    if lock:
+        task = db.query(HumanTask).filter_by(id=lock.task_id).first()
+        return SessionLockResponse(
+            locked=True,
+            task_id=lock.task_id,
+            task_type=task.task_type if task else None,
+        )
+    return SessionLockResponse(locked=False, task_id=None, task_type=None)

@@ -27,5 +27,5 @@ export const routes: Routes = [
     canActivate: [authGuard],
     data: { role: 'user' },
   },
-  { path: '**', redirectTo: 'login' },
+{ path: '**', redirectTo: 'login' },
 ];

@@ -1,6 +1,6 @@
 import { Component, Input } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { ChatMessage, MessageBlock, TextBlock, ErrorBlock } from '../../../core/models/chat.models';
+import { ChatMessage, MessageBlock, TextBlock, ErrorBlock, ImageBlock, HitlResponseBlock } from '../../../core/models/chat.models';
 import { MarkdownContentComponent } from '../markdown-content/markdown-content.component';
 
 @Component({
@@ -18,6 +18,25 @@ export class MessageBubbleComponent {
 
   isError(block: MessageBlock): block is ErrorBlock {
     return block.type === 'error';
+  }
+
+  isImage(block: MessageBlock): block is ImageBlock {
+    return block.type === 'image';
+  }
+
+  isHitlResponse(block: MessageBlock): block is HitlResponseBlock {
+    return block.type === 'hitl_response';
+  }
+
+  hasTextOrError(): boolean {
+    return this.message.blocks.some(b => b.type === 'text' || b.type === 'error');
+  }
+
+  downloadImage(block: ImageBlock) {
+    const a = document.createElement('a');
+    a.href = block.dataUrl;
+    a.download = block.fileName ?? 'image.png';
+    a.click();
   }
 
   /**

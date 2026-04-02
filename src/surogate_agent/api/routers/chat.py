@@ -16,7 +16,7 @@ from surogate_agent.api.deps import ServerSettings, settings_dep
 from surogate_agent.api.models import ChatRequest
 from surogate_agent.auth.jwt import get_current_user
 from surogate_agent.auth.models import User
-from surogate_agent.core.agent import create_agent, subagent_activity_queue
+from surogate_agent.core.agent import create_agent, hitl_session_context, subagent_activity_queue
 from surogate_agent.core.config import AgentConfig, _DEFAULT_SKILLS_DIR
 from surogate_agent.core.logging import get_logger
 from surogate_agent.core.roles import Role
@@ -94,6 +94,30 @@ def _split_inline_thinking(text: str) -> tuple[str, str]:
     parts = _THINK_TAG_RE.findall(text)
     clean = _THINK_TAG_RE.sub("", text).strip()
     return "\n\n".join(p.strip() for p in parts if p.strip()), clean
+
+
+def _get_completed_hitl_response(thread_id: str) -> dict | None:
+    """Return the response dict from the most-recently completed HITL task for
+    the given session/thread_id, or None if no completed task exists.
+
+    Used to auto-resume an interrupted LangGraph checkpoint when the background
+    resume task failed to update it before the user's next message arrived.
+    """
+    try:
+        from surogate_agent.auth.database import SessionLocal
+        from surogate_agent.auth.models import HumanTask
+        with SessionLocal() as db:
+            task = (
+                db.query(HumanTask)
+                .filter_by(origin_session_id=thread_id, status="completed")
+                .order_by(HumanTask.responded_at.desc())
+                .first()
+            )
+            if task and task.response_json:
+                return json.loads(task.response_json)
+    except Exception as exc:
+        log.debug("_get_completed_hitl_response: %s", exc)
+    return None
 
 
 def _unwrap_messages(raw) -> list:
@@ -316,8 +340,8 @@ async def _stream_chat(
             vllm_min_p=req.vllm_min_p,
             vllm_presence_penalty=req.vllm_presence_penalty,
             vllm_context_length=req.vllm_context_length,
-            thinking_enabled=req.thinking_enabled,
-            thinking_budget=req.thinking_budget,
+            thinking_enabled=req.thinking_enabled or False,
+            thinking_budget=req.thinking_budget or 10000,
             experts=experts_data or [],
             expert_lookup_enabled=expert_lookup_enabled,
         )
@@ -337,7 +361,9 @@ async def _stream_chat(
                 skill_workspace = config.dev_workspace_dir / dev_skill
             else:
                 thread_id = req.session_id.strip() if req.session_id.strip() else f"dev:{int(time.time())}"
-                skill_workspace = config.dev_workspace_dir
+                # Root mode — use the _root subdirectory so the workspace API
+                # (which serves GET /workspace/_root/files/…) resolves correctly.
+                skill_workspace = config.dev_workspace_dir / "_root"
             skill_workspace.mkdir(parents=True, exist_ok=True)
             from surogate_agent.core.session import Session
             session = Session(session_id=thread_id, workspace_dir=skill_workspace)
@@ -499,6 +525,13 @@ async def _stream_chat(
         _sa_queue: _asyncio.Queue = _asyncio.Queue()
         _sa_token = subagent_activity_queue.set(_sa_queue)
 
+        # Set per-request HITL session context so hitl/tools.py can write
+        # HumanTask rows with the correct origin session and user.
+        _hitl_token = hitl_session_context.set({
+            "thread_id": thread_id,
+            "user_id": req.user_id or f"api-{role.value}",
+        })
+
         # Create agent
         agent = create_agent(
             role=role,
@@ -511,18 +544,9 @@ async def _stream_chat(
 
         # For user-role chats, announce which skills are loaded so the frontend
         # can display a real-time "Skill activity" panel with names and descriptions.
+        # Reuse the skills already loaded by create_agent() — no extra scan needed.
         if role == Role.USER:
-            from surogate_agent.skills.registry import SkillRegistry
-            _skill_registry = SkillRegistry()
-            if _DEFAULT_SKILLS_DIR.exists():
-                _skill_registry.scan(_DEFAULT_SKILLS_DIR)
-            if config.user_skills_dir.exists():
-                _skill_registry.scan(config.user_skills_dir)
-            _user_paths = _skill_registry.paths_for_role(Role.USER)
-            _active_skills = [
-                s for s in _skill_registry.all_skills()
-                if s.path in _user_paths
-            ]
+            _active_skills = list(getattr(agent, "loaded_user_skills", []))
             if req.skill.strip():
                 _active_skills = [s for s in _active_skills if s.name == req.skill.strip()]
             for _si in _active_skills:
@@ -544,7 +568,13 @@ async def _stream_chat(
                 )
                 message_text = message_text[:max_chars]
 
-        invoke_input = {"messages": [{"role": "user", "content": message_text}]}
+        if req.images:
+            content: list[dict] = [{"type": "text", "text": message_text}]
+            for img_url in req.images:
+                content.append({"type": "image_url", "image_url": {"url": img_url}})
+            invoke_input = {"messages": [{"role": "user", "content": content}]}
+        else:
+            invoke_input = {"messages": [{"role": "user", "content": message_text}]}
 
         rendered_ids: set[str] = set()
         _checkpoint_tuple = None
@@ -580,6 +610,45 @@ async def _stream_chat(
             await _trim_checkpoint_to_context(
                 checkpointer, invoke_config, _checkpoint_tuple, config.vllm_context_length,
             )
+
+        # Auto-resume interrupted HITL checkpoints.
+        # If the LangGraph graph is in an interrupted state (background resume
+        # task failed or hasn't run yet) AND there is a completed HITL task for
+        # this session, resume the graph now so the LLM has full context.
+        # NOTE: LangGraph stores interrupt values in pending_writes (the writes
+        # table), NOT in channel_values of the checkpoint dict.
+        if checkpointer is not None and _checkpoint_tuple is not None:
+            _has_interrupt = bool(
+                _checkpoint_tuple.pending_writes and any(
+                    (w[1] if isinstance(w, (tuple, list)) and len(w) > 1 else "") == "__interrupt__"
+                    for w in _checkpoint_tuple.pending_writes
+                )
+            )
+            if _has_interrupt:
+                _hitl_resp = _get_completed_hitl_response(thread_id)
+                if _hitl_resp is not None:
+                    log.info("auto-resuming interrupted HITL checkpoint for thread=%s", thread_id)
+                    try:
+                        from langgraph.types import Command as _Command
+                        _cur_ctx = hitl_session_context.get({})
+                        _resume_tok = hitl_session_context.set({**_cur_ctx, "is_resume": True})
+                        try:
+                            async for _rc in agent.astream(
+                                _Command(resume=_hitl_resp), config=invoke_config
+                            ):
+                                for _msg in _iter_messages(_rc):
+                                    _mid = (
+                                        _msg.get("id") if isinstance(_msg, dict)
+                                        else getattr(_msg, "id", None)
+                                    )
+                                    if _mid:
+                                        rendered_ids.add(_mid)
+                        finally:
+                            hitl_session_context.reset(_resume_tok)
+                    except Exception as _resume_exc:
+                        log.warning(
+                            "auto-resume of interrupted HITL checkpoint failed: %s", _resume_exc
+                        )
 
         def _is_context_overflow(exc: Exception) -> bool:
             """Detect vLLM / OpenAI-compatible context-length errors."""
@@ -713,6 +782,27 @@ async def _stream_chat(
                     elif kind == "error":
                         raise data
 
+                    # Detect LangGraph interrupt (HITL pause) — emitted as a
+                    # chunk with an ``__interrupt__`` key before the stream ends.
+                    if isinstance(data, dict) and "__interrupt__" in data:
+                        interrupt_val = data["__interrupt__"]
+                        task_id: str | None = None
+                        if isinstance(interrupt_val, (list, tuple)):
+                            for ni in interrupt_val:
+                                v = getattr(ni, "value", ni) if not isinstance(ni, dict) else ni
+                                if isinstance(v, dict) and "task_id" in v:
+                                    task_id = v["task_id"]
+                                    break
+                        elif isinstance(interrupt_val, dict):
+                            task_id = interrupt_val.get("task_id")
+                        if task_id:
+                            log.info("HITL interrupt detected: task_id=%s thread=%s", task_id, thread_id)
+                            yield _sse_event("session_locked", {
+                                "task_id": task_id,
+                                "message": "Session paused — waiting for human input",
+                            })
+                        continue  # don't try to extract messages from interrupt chunk
+
                     # Process messages in this chunk
                     for msg in _iter_messages(data):
                         msg_id = (
@@ -734,6 +824,14 @@ async def _stream_chat(
                     pass
 
         try:
+            # Snapshot file mtimes before the agent runs so the done event can
+            # report only files that are new or modified during this turn.
+            pre_turn_mtimes: dict[str, float] = {}
+            if session.workspace_dir.is_dir():
+                for _f in session.workspace_dir.iterdir():
+                    if _f.is_file():
+                        pre_turn_mtimes[_f.name] = _f.stat().st_mtime
+
             # First attempt — normal flow.
             # If the model rejects the request due to context overflow AND tool
             # calling is enabled, automatically retry without tool schemas.
@@ -778,19 +876,27 @@ async def _stream_chat(
 
         finally:
             subagent_activity_queue.reset(_sa_token)
+            hitl_session_context.reset(_hitl_token)
             if _checkpointer_ctx is not None:
                 try:
                     await _checkpointer_ctx.__aexit__(None, None, None)
                 except Exception:
                     pass
 
-        # Done event
-        files = [f.name for f in session.files]
+        # Done event — include all files for the file-list panel, plus a
+        # new_files list of files created or modified during this turn so the
+        # frontend can inject image previews without re-showing old images.
+        all_session_files = session.files
+        files = [f.name for f in all_session_files]
+        new_files = [
+            f.name for f in all_session_files
+            if f.name not in pre_turn_mtimes or f.stat().st_mtime > pre_turn_mtimes[f.name]
+        ]
         log.info(
-            "chat completed: session=%s files=%d",
-            session.session_id, len(files),
+            "chat completed: session=%s files=%d new=%d",
+            session.session_id, len(files), len(new_files),
         )
-        yield _sse_event("done", {"session_id": session.session_id, "files": files})
+        yield _sse_event("done", {"session_id": session.session_id, "files": files, "new_files": new_files})
 
     except Exception as exc:
         log.error("unhandled exception in chat stream: %s", exc, exc_info=True)
@@ -838,8 +944,8 @@ async def chat_endpoint(
         "vllm_min_p": req.vllm_min_p if req.vllm_min_p is not None else current_user.vllm_min_p,
         "vllm_presence_penalty": req.vllm_presence_penalty if req.vllm_presence_penalty is not None else current_user.vllm_presence_penalty,
         "vllm_context_length": req.vllm_context_length if req.vllm_context_length is not None else current_user.vllm_context_length,
-        "thinking_enabled": req.thinking_enabled if req.thinking_enabled else (current_user.thinking_enabled or False),
-        "thinking_budget": req.thinking_budget if req.thinking_budget != 10000 else (current_user.thinking_budget or 10000),
+        "thinking_enabled": req.thinking_enabled if req.thinking_enabled is not None else (current_user.thinking_enabled or False),
+        "thinking_budget": req.thinking_budget if req.thinking_budget is not None else (current_user.thinking_budget or 10000),
     })
 
     # Load experts for the current user (use a short-lived session, not a Depends,

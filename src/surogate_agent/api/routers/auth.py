@@ -26,6 +26,7 @@ from surogate_agent.auth.schemas import (
 from surogate_agent.auth.service import (
     authenticate_user,
     create_user,
+    get_all_users,
     get_user_by_email,
     get_user_by_username,
     update_user_settings,
@@ -91,6 +92,17 @@ def login_form(
         )
     log.info("user logged in (form): username=%r role=%s", user.username, user.role)
     return TokenResponse(access_token=create_access_token(user.username, user.role))
+
+
+@router.get("/users", response_model=list[UserResponse])
+def list_users(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[User]:
+    """Return all registered users with their LLM settings (developer-only)."""
+    if current_user.role != "developer":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Developer access required.")
+    return get_all_users(db)
 
 
 @router.get("/me", response_model=UserResponse)

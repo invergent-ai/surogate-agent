@@ -159,3 +159,53 @@ class SessionInputFiles(Base):
 
     def __repr__(self) -> str:
         return f"<SessionInputFiles session_id={self.session_id!r}>"
+
+
+class HumanTask(Base):
+    """A pending or completed human-in-the-loop task.
+
+    Created when an agent calls ``request_approval`` or ``send_report``.
+    The originating LangGraph session is suspended until the assigned user
+    responds via POST /tasks/{id}/respond.
+    """
+
+    __tablename__ = "human_tasks"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, index=True)
+    # "approval" or "report"
+    task_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    # "pending" | "completed" | "cancelled"
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
+    # Originating session — the LangGraph thread_id to resume when task is completed
+    origin_session_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    origin_user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    # User who must respond
+    assigned_user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    # Task content
+    title: Mapped[str] = mapped_column(String(512), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    context_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    # Response data (JSON) — set when status transitions to "completed"
+    response_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    responded_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    def __repr__(self) -> str:
+        return f"<HumanTask id={self.id!r} type={self.task_type!r} status={self.status!r}>"
+
+
+class SessionLock(Base):
+    """Marks a session as locked while a HITL task is pending.
+
+    A session is locked when a row exists for its ``session_id``.
+    The lock is released when the assigned user responds to the task.
+    """
+
+    __tablename__ = "session_locks"
+
+    session_id: Mapped[str] = mapped_column(String(255), primary_key=True, index=True)
+    task_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    locked_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+
+    def __repr__(self) -> str:
+        return f"<SessionLock session_id={self.session_id!r} task_id={self.task_id!r}>"

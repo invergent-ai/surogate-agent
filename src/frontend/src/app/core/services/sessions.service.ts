@@ -144,4 +144,13 @@ export class SessionsService {
       catchError(() => of(null)),
     );
   }
+
+  // ── HITL session lock ─────────────────────────────────────────────────────
+
+  /** Check whether a session is locked pending a HITL response. */
+  getSessionLock(sessionId: string): Observable<{ locked: boolean; task_id: string | null; task_type: string | null }> {
+    return this.http
+      .get<{ locked: boolean; task_id: string | null; task_type: string | null }>(this.url(`/${sessionId}/lock`))
+      .pipe(catchError(() => of({ locked: false, task_id: null, task_type: null })));
+  }
 }
