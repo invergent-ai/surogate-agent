@@ -71,6 +71,7 @@ class SkillResponse(BaseModel):
     role_restriction: Optional[str]
     allowed_tools: list[str]
     experts: list[str]
+    forms: list[str] = []
     path: str
     skill_md_content: str
     helper_files: list[FileInfo]
@@ -149,7 +150,7 @@ class InputFilesResponse(BaseModel):
 
 class HumanTaskResponse(BaseModel):
     id: str
-    task_type: str          # "approval" | "report"
+    task_type: str          # "approval" | "report" | "file_request" | "form_input"
     status: str             # "pending" | "completed" | "cancelled"
     title: str
     description: str
@@ -164,6 +165,7 @@ class HumanTaskResponse(BaseModel):
 class TaskRespondRequest(BaseModel):
     decision: Optional[str] = None      # "approved" | "rejected" — for approval tasks
     acknowledged: Optional[bool] = None  # for report tasks
+    form_data: Optional[dict] = None     # submitted form values — for form_input tasks
     feedback: str = ""
 
 

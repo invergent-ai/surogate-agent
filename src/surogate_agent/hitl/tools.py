@@ -57,6 +57,12 @@ def _create_task(
         # First execution — create the task and session lock.
         task_id = str(uuid.uuid4())
         try:
+            # Enrich context with LLM settings so resume can use the same model/key.
+            context_to_save = dict(context)
+            if ctx.get("api_key"):
+                context_to_save["_api_key"] = ctx["api_key"]
+            if ctx.get("model"):
+                context_to_save["_model"] = ctx["model"]
             with SessionLocal() as db:
                 task = HumanTask(
                     id=task_id,
@@ -67,7 +73,7 @@ def _create_task(
                     assigned_user_id=assigned_to,
                     title=title,
                     description=description,
-                    context_json=json.dumps(context),
+                    context_json=json.dumps(context_to_save),
                     created_at=datetime.utcnow(),
                 )
                 db.add(task)
@@ -126,15 +132,36 @@ def _create_task(
         from langgraph.types import interrupt
         response = interrupt({"task_id": task_id, "type": task_type})
         # This line only executes after the graph is resumed with the response.
-        decision = response.get("decision") if isinstance(response, dict) else str(response)
         feedback = response.get("feedback", "") if isinstance(response, dict) else ""
-        log.info("HITL task %s resumed: decision=%r feedback=%r", task_id, decision, feedback)
         if task_type == "approval":
+            decision = response.get("decision") if isinstance(response, dict) else str(response)
+            log.info("HITL task %s resumed: decision=%r feedback=%r", task_id, decision, feedback)
             return (
                 f"Approval received for task '{title}': {decision}."
                 + (f" Feedback: {feedback}" if feedback else "")
             )
+        elif task_type == "form_input":
+            form_data = response.get("form_data", {}) if isinstance(response, dict) else {}
+            log.info("HITL task %s resumed: form_data=%r", task_id, form_data)
+            result = f"Form submitted by {assigned_to} for task '{title}'."
+            if form_data:
+                result += "\n\nSubmitted form data:\n" + "\n".join(
+                    f"- **{k}**: {v}" for k, v in form_data.items()
+                )
+            if feedback:
+                result += f"\n\nFeedback: {feedback}"
+            return result
+        elif task_type == "file_request":
+            files = response.get("files", []) if isinstance(response, dict) else []
+            log.info("HITL task %s resumed: files=%r", task_id, files)
+            result = f"Files uploaded by {assigned_to} for task '{title}'."
+            if files:
+                result += "\n\nUploaded files:\n" + "\n".join(f"- `{f}`" for f in files)
+            if feedback:
+                result += f"\n\nFeedback: {feedback}"
+            return result
         else:
+            log.info("HITL task %s resumed: acknowledged, feedback=%r", task_id, feedback)
             return (
                 f"Report acknowledged by {assigned_to}."
                 + (f" Feedback: {feedback}" if feedback else "")
@@ -147,6 +174,53 @@ def _create_task(
             f"Task '{title}' sent to {assigned_to!r} (task id: {task_id}). "
             "The conversation will continue asynchronously."
         )
+
+
+@tool
+def request_form(
+    assigned_to: str,
+    title: str,
+    description: str,
+    form_schema: str,
+    context: str = "{}",
+) -> str:
+    """Present a dynamic form to another user and collect their structured input.
+
+    Use this tool when you need the user to fill in structured data (numbers,
+    text, selections, dates, etc.) defined by a formio.js JSON schema.  The
+    recipient sees a rendered form with the specified fields; after they submit
+    the conversation resumes with their form data in ``form_data``.
+    Do NOT use this for yes/no decisions (use request_approval) or plain file
+    uploads (use request_files) or notifications (use send_report).
+
+    IMPORTANT — two-turn confirmation protocol:
+    1. Complete any prerequisite work first if applicable.
+    2. Summarise the form you plan to send and ask "Should I send this?" — NO tool call yet.
+    3. Call this tool only AFTER the user explicitly confirms in the next turn.
+    SKIP steps 2-3 entirely when the active skill's instructions say to call this tool
+    immediately or without asking for confirmation — skill instructions always override
+    this default protocol. Also skip when the user's message is solely about requesting
+    the form, they say to proceed right now, AND no prior work is needed.
+
+    Args:
+        assigned_to: Username of the user who should fill the form (e.g. "alice").
+        title: Short task title shown in the inbox (max ~80 chars).
+        description: Instructions for the form recipient — markdown supported.
+        form_schema: Formio.js JSON schema string, e.g.
+                     '{"components":[{"type":"textfield","key":"name","label":"Name"}]}'.
+                     Read from a skill helper file via read_file() when available.
+        context: JSON string with optional additional key-value context.
+    """
+    try:
+        schema_obj = json.loads(form_schema) if form_schema.strip() else {}
+    except json.JSONDecodeError:
+        return f"Invalid form_schema: not valid JSON. Please provide a valid formio.js schema."
+    try:
+        ctx_dict = json.loads(context) if context.strip() else {}
+    except json.JSONDecodeError:
+        ctx_dict = {"note": context}
+    ctx_dict["_form_schema"] = schema_obj
+    return _create_task("form_input", assigned_to, title, description, ctx_dict)
 
 
 @tool

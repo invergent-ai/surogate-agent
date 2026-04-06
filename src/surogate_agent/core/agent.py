@@ -1210,9 +1210,9 @@ def create_agent(
     # a task to another user via request_approval / send_report.
     if role == Role.USER:
         try:
-            from surogate_agent.hitl.tools import request_approval, request_files, send_report
-            config.extra_tools = [*config.extra_tools, request_approval, request_files, send_report]
-            log.debug("HITL tools injected: request_approval, request_files, send_report")
+            from surogate_agent.hitl.tools import request_approval, request_files, request_form, send_report
+            config.extra_tools = [*config.extra_tools, request_approval, request_files, request_form, send_report]
+            log.debug("HITL tools injected: request_approval, request_files, request_form, send_report")
         except Exception as _hitl_exc:
             log.debug("HITL tools not available: %s", _hitl_exc)
 
@@ -1489,6 +1489,9 @@ def _build_system_suffix(
 
         parts.append(
             f"You are operating in USER mode.\n\n"
+            f"**Current user:** `{role_ctx.user_id}`  "
+            f"— use this exact value as `assigned_to` whenever a skill instructs you "
+            f"to send a form, request approval, or route a task to the current user.\n\n"
             f"{mcp_section}\n"
             f"{skill_catalog}"
             f"## Human-in-the-loop (HITL) — mandatory confirmation\n\n"
@@ -1501,6 +1504,9 @@ def _build_system_suffix(
             f"- `request_files` → the user needs another user to **upload files** into this session "
             f"(\"ask alice for the spreadsheet\", \"request the PDF from bob\"). "
             f"Recipient sees a **multi-file upload form**; uploaded files land in this session's input files.\n"
+            f"- `request_form` → collect **structured user input** via a dynamic form (numbers, text, "
+            f"selections, dates, etc.) defined by a formio.js JSON schema stored in a skill helper file. "
+            f"Recipient sees a rendered form; the submitted values are returned as ``form_data``.\n"
             f"- `send_report` → the user wants to **share information** with no decision required "
             f"(\"send the report\", \"notify\", \"share the results\"). "
             f"Recipient sees an **Acknowledge** button only.\n\n"

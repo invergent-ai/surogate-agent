@@ -22,6 +22,7 @@ import { ToolCallBlockComponent } from '../tool-call-block/tool-call-block.compo
 import { ApprovalTaskComponent } from '../task-items/approval-task.component';
 import { ReportTaskComponent } from '../task-items/report-task.component';
 import { FileRequestTaskComponent } from '../task-items/file-request-task.component';
+import { FormInputTaskComponent } from '../task-items/form-input-task.component';
 
 let msgCounter = 0;
 function nextId() { return `msg-${++msgCounter}`; }
@@ -44,7 +45,7 @@ interface SkillActivity {
 @Component({
   selector: 'app-chat',
   standalone: true,
-  imports: [CommonModule, FormsModule, MessageBubbleComponent, ThinkingBlockComponent, ToolCallBlockComponent, ApprovalTaskComponent, ReportTaskComponent, FileRequestTaskComponent],
+  imports: [CommonModule, FormsModule, MessageBubbleComponent, ThinkingBlockComponent, ToolCallBlockComponent, ApprovalTaskComponent, ReportTaskComponent, FileRequestTaskComponent, FormInputTaskComponent],
   templateUrl: './chat.component.html',
   styles: [`
     @keyframes task-panel-up {
@@ -78,6 +79,8 @@ export class ChatComponent implements OnChanges, OnDestroy {
   @Input() lockTaskType: string | null = null;
   /** Task to display in the sliding task detail panel. Null = panel closed. */
   @Input() activeTask: HumanTask | null = null;
+  /** When true, renders the task panel in read-only preview mode (no submit/respond actions). */
+  @Input() activeTaskPreviewMode = false;
 
   @Output() sessionCreated    = new EventEmitter<string>();
   @Output() skillDetected     = new EventEmitter<string>();
@@ -251,14 +254,23 @@ export class ChatComponent implements OnChanges, OnDestroy {
 
   ngOnChanges(changes: SimpleChanges) {
     if (changes['historyKey']) {
-      const key = changes['historyKey'].currentValue as string;
+      const prevKey = changes['historyKey'].previousValue as string | undefined;
+      const key     = changes['historyKey'].currentValue  as string;
       this.inputText.set('');
       this._historyIndex = -1;
       this._draftText = '';
       if (key) {
-        this.sessionsSvc.getInputHistory(key).subscribe(entries => {
-          this._sentHistory = entries;
-        });
+        // Transitioning from a blank tab (no key) to a named skill tab: persist
+        // any in-memory messages sent during skill creation so they survive future
+        // tab switches.  Don't overwrite _sentHistory — it already has the right
+        // entries and the async fetch would race with arrow-up key presses.
+        if (!prevKey && this._sentHistory.length > 0) {
+          this.sessionsSvc.saveInputHistory(key, this._sentHistory).subscribe();
+        } else {
+          this.sessionsSvc.getInputHistory(key).subscribe(entries => {
+            this._sentHistory = entries;
+          });
+        }
       } else {
         this._sentHistory = [];
       }
@@ -417,6 +429,30 @@ export class ChatComponent implements OnChanges, OnDestroy {
     if (ev.event === 'session_locked') {
       const taskId = ev.data.task_id ?? '';
       if (taskId) this.sessionLocked.emit({ taskId });
+      // Finalize the current assistant message so history saved to the backend
+      // (and later restored after unlock) shows a clean state — any pending
+      // tool_call blocks (no result yet) get a placeholder result so they don't
+      // render as "..." indefinitely in AGENT ACTIVITY after the session resumes.
+      if (this._currentAssistantId) {
+        this.messages.update(msgs => {
+          const idx = msgs.findIndex(m => m.id === this._currentAssistantId);
+          if (idx < 0) return msgs;
+          const copy = [...msgs];
+          const msg = { ...copy[idx], blocks: [...copy[idx].blocks], finalized: true };
+          msg.blocks = msg.blocks.map(block => {
+            if (block.type === 'tool_call' && !(block as ToolBlock).result) {
+              return { ...block, result: '⏸ Waiting for human response…' } as ToolBlock;
+            }
+            return block;
+          });
+          copy[idx] = msg;
+          return copy;
+        });
+        this._currentAssistantId = '';
+        this.streaming.set(false);
+        this.agentStatus.set('');
+        this._emitSnapshot();
+      }
       return;
     }
 
@@ -642,6 +678,10 @@ export class ChatComponent implements OnChanges, OnDestroy {
     })));
     this.currentSessionId.set(sessionId);
 
+    // Scroll to the most recent message so the user lands at the bottom of the
+    // conversation (same position as after sending a message), ready to scroll up.
+    if (msgs.length > 0) this.scrollToBottom();
+
     // Re-populate skill activity panel from tool_call blocks in the restored messages.
     // Skill_use SSE events aren't replayed on restore, so we derive skill names from
     // any SKILL.md paths that appear in saved tool_call args. Duplicates are kept to
@@ -866,12 +906,17 @@ export class ChatComponent implements OnChanges, OnDestroy {
   }
 
   private scrollToBottom() {
-    setTimeout(() => {
-      const ml = this.messageListRef?.nativeElement;
-      if (ml) ml.scrollTop = ml.scrollHeight;
-      const tl = this.thinkingListRef?.nativeElement;
-      if (tl) tl.scrollTop = tl.scrollHeight;
-    }, 0);
+    // Use two animation frames: the first lets Angular flush DOM updates,
+    // the second ensures the browser has completed layout so scrollHeight
+    // reflects the full rendered height (important when restoring many messages).
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const ml = this.messageListRef?.nativeElement;
+        if (ml) ml.scrollTop = ml.scrollHeight;
+        const tl = this.thinkingListRef?.nativeElement;
+        if (tl) tl.scrollTop = tl.scrollHeight;
+      });
+    });
   }
 
   ngOnDestroy() {

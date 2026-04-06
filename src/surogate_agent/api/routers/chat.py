@@ -530,6 +530,8 @@ async def _stream_chat(
         _hitl_token = hitl_session_context.set({
             "thread_id": thread_id,
             "user_id": req.user_id or f"api-{role.value}",
+            "api_key": req.api_key or "",
+            "model": model,
         })
 
         # Create agent

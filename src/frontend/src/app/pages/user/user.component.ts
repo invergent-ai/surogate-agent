@@ -277,7 +277,7 @@ export class UserComponent implements OnInit, AfterViewInit, OnDestroy {
 
   private _startLockPolling() {
     this._stopLockPolling();
-    this._lockPollTimer = setInterval(() => this._checkLock(), 5000);
+    this._lockPollTimer = setInterval(() => this._checkLock(), 1000);
   }
 
   private _stopLockPolling() {

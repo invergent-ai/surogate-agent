@@ -80,7 +80,7 @@ def list_skills(
     registry = _build_registry(settings)
     if role == "developer":
         paths = registry.paths_for_role(Role.DEVELOPER)
-        _hidden = {"skill-developer", "mcp-manager"}
+        _hidden = {"skill-developer", "mcp-manager", "form-developer"}
         infos = [s for s in registry.all_skills() if s.path in paths and s.name not in _hidden]
     elif role == "user":
         paths = registry.paths_for_role(Role.USER)
@@ -168,6 +168,7 @@ def get_skill(name: str, settings: ServerSettings = Depends(settings_dep)):
         role_restriction=info.role_restriction,
         allowed_tools=info.allowed_tools,
         experts=info.experts,
+        forms=info.forms,
         path=str(info.path),
         skill_md_content=_skill_md_content(info.path),
         helper_files=_helper_files(info.path),

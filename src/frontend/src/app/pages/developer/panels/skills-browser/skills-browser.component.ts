@@ -10,6 +10,7 @@ import { ToastService } from '../../../../core/services/toast.service';
 import {
   FileInfo, SkillListItem, SkillResponse, ValidationResult
 } from '../../../../core/models/skill.models';
+import { HumanTask } from '../../../../core/models/task.models';
 import { ValidationBadgeComponent } from '../../../../shared/components/validation-badge/validation-badge.component';
 import { FileListComponent } from '../../../../shared/components/file-list/file-list.component';
 import { FileViewerComponent } from '../../../../shared/components/file-viewer/file-viewer.component';
@@ -21,12 +22,14 @@ import { FileViewerComponent } from '../../../../shared/components/file-viewer/f
   templateUrl: './skills-browser.component.html',
 })
 export class SkillsBrowserComponent implements OnInit {
-  @Output() skillSelected  = new EventEmitter<string>();
-  @Output() skillDeleted   = new EventEmitter<string>();
-  @Output() fileOpened     = new EventEmitter<void>();
-  @Output() detailClosed   = new EventEmitter<void>();
-  @Output() skillsLoaded   = new EventEmitter<string[]>();
-  @Output() historyCleared = new EventEmitter<void>();
+  @Output() skillSelected    = new EventEmitter<string>();
+  @Output() skillDeleted     = new EventEmitter<string>();
+  @Output() fileOpened       = new EventEmitter<void>();
+  @Output() detailClosed     = new EventEmitter<void>();
+  @Output() skillsLoaded     = new EventEmitter<string[]>();
+  @Output() historyCleared   = new EventEmitter<void>();
+  /** Emitted when a form chip is clicked. Null = close the preview. */
+  @Output() formPreviewTask  = new EventEmitter<HumanTask | null>();
 
   skills = signal<SkillListItem[]>([]);
   filter = signal('');
@@ -65,9 +68,11 @@ export class SkillsBrowserComponent implements OnInit {
 
   ngOnInit() { this.loadSkills(); }
 
-  loadSkills() {
-    this.deselect();
-    this.detailClosed.emit();
+  loadSkills(silent = false) {
+    if (!silent) {
+      this.deselect();
+      this.detailClosed.emit();
+    }
     this.skillsService.list('developer').subscribe(list => {
       this.skills.set(list);
       this.skillsLoaded.emit(list.map(s => s.name));
@@ -190,6 +195,35 @@ export class SkillsBrowserComponent implements OnInit {
         (event.target as HTMLInputElement).value = '';
         this.toast.error(err?.error?.detail ?? 'Import failed');
       },
+    });
+  }
+
+  // ── Form preview ────────────────────────────────────────────────────────────
+
+  openFormPreview(filename: string): void {
+    const sk = this.selectedSkill();
+    if (!sk) return;
+    const fileWithExt = filename.endsWith('.json') ? filename : `${filename}.json`;
+    this.skillsService.readFile(sk.name, fileWithExt).subscribe({
+      next: (content) => {
+        try {
+          const schema = JSON.parse(content);
+          this.formPreviewTask.emit({
+            id: '__preview__',
+            taskType: 'form_input',
+            status: 'pending',
+            title: filename,
+            description: '',
+            context: { _form_schema: schema },
+            assignedTo: '',
+            assignedBy: '',
+            createdAt: new Date().toISOString(),
+          });
+        } catch {
+          this.toast.error('Invalid JSON in form file');
+        }
+      },
+      error: () => this.toast.error('Could not load form file'),
     });
   }
 

@@ -12,6 +12,7 @@ import { AuthService } from '../../core/services/auth.service';
 import { SessionsService } from '../../core/services/sessions.service';
 import { SettingsService } from '../../core/services/settings.service';
 import { ChatMessage } from '../../core/models/chat.models';
+import { HumanTask } from '../../core/models/task.models';
 import { ThemeService } from '../../core/services/theme.service';
 import { BreakpointService } from '../../core/services/breakpoint.service';
 import { FullscreenService } from '../../core/services/fullscreen.service';
@@ -63,6 +64,14 @@ export class DeveloperComponent {
   activeSkill      = signal('');
   settingsOpen     = signal(false);
   chatHasMessages  = signal(false);
+  formPreviewTask  = signal<HumanTask | null>(null);
+
+  /**
+   * Name of the last skill detected mid-stream while on a blank "new skill" tab.
+   * Used as a fallback in onMessagesSnapshot so the creation conversation is
+   * saved under dev:<name> even though activeSkill is '' at stream end.
+   */
+  private _pendingSkillName = '';
 
   /** CSS width of each panel. '0px' = closed. */
   leftPanelWidth  = signal<string>('18rem');
@@ -150,7 +159,10 @@ export class DeveloperComponent {
 
       if (name && this.devChat) {
         // Load persisted chat history for this skill and restore it visually.
+        // Guard the callback: discard stale responses if the user switched
+        // tabs before the HTTP request finished.
         this.sessionsService.getHistory(`dev:${name}`).subscribe(history => {
+          if (this.activeSkill() !== name || !this.devChat) return;
           const msgs = history.messages as ChatMessage[];
           this.devChat.restoreSession(msgs, `dev:${name}`);
         });
@@ -170,7 +182,10 @@ export class DeveloperComponent {
   }
 
   onMessagesSnapshot(messages: unknown[]) {
-    const skill = this.activeSkill();
+    // Prefer the active skill; fall back to _pendingSkillName when on a blank
+    // tab (skill just created in this turn).
+    const skill = this.activeSkill() || this._pendingSkillName;
+    this._pendingSkillName = '';
     if (!skill || messages.length === 0) return;
     this.sessionsService.saveHistory(`dev:${skill}`, messages).subscribe();
   }
@@ -191,9 +206,16 @@ export class DeveloperComponent {
     if (this.skillTabs) {
       // ensureTab adds the tab silently — does NOT change activeSkill or clear
       // the chat, so an agent writing a skill file mid-stream can't hijack the
-      // developer's current skill focus.
+      // developer's current skill focus. loadSkills(true) refreshes the list
+      // without emitting detailClosed (which would wipe the active chat).
       this.skillTabs.ensureTab(name);
-      if (this.skillsBrowser) this.skillsBrowser.loadSkills();
+      if (this.skillsBrowser) this.skillsBrowser.loadSkills(true);
+    }
+    // When creating a skill from a blank tab (activeSkill is ''), remember the
+    // detected name so onMessagesSnapshot can save the creation conversation
+    // under dev:<name> instead of discarding it.
+    if (!this.activeSkill()) {
+      this._pendingSkillName = name;
     }
   }
 

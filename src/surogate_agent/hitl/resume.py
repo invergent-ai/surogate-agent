@@ -14,6 +14,42 @@ from surogate_agent.core.logging import get_logger
 log = get_logger(__name__)
 
 
+def _collect_ai_text(msg, seen_ids: set, text_parts: list) -> None:
+    """Extract text from an AI/assistant message and append to text_parts.
+
+    Skips messages whose id is already in seen_ids (deduplication for
+    "values" stream mode which replays the full history on every chunk).
+    Works with both LangChain message objects and plain dicts.
+    """
+    msg_id = msg.get("id") if isinstance(msg, dict) else getattr(msg, "id", None)
+    if msg_id:
+        if msg_id in seen_ids:
+            return
+        seen_ids.add(msg_id)
+
+    msg_type = msg.get("type") if isinstance(msg, dict) else getattr(msg, "type", None)
+    if msg_type not in ("ai", "assistant"):
+        return
+
+    content = msg.get("content", "") if isinstance(msg, dict) else getattr(msg, "content", "")
+    if isinstance(content, str):
+        if content.strip():
+            text_parts.append(content)
+    elif isinstance(content, list):
+        for part in content:
+            if isinstance(part, dict) and part.get("type") == "text":
+                t = part.get("text", "")
+                if t.strip():
+                    text_parts.append(t)
+            elif not isinstance(part, dict):
+                # Handle Pydantic content block objects (e.g. Anthropic extended thinking)
+                part_type = getattr(part, "type", None)
+                if part_type == "text":
+                    t = getattr(part, "text", "")
+                    if isinstance(t, str) and t.strip():
+                        text_parts.append(t)
+
+
 async def resume_hitl_session(
     origin_session_id: str,
     origin_user_id: str,
@@ -70,6 +106,7 @@ async def resume_hitl_session(
                 mcp_workspace_dir=settings.mcp_workspace_dir,
                 mcp_scripts_dir=settings.mcp_scripts_dir,
                 model=_restore_model(context_json, settings),
+                api_key=_restore_api_key(context_json),
             )
 
             agent = create_agent(
@@ -81,7 +118,39 @@ async def resume_hitl_session(
             )
 
             invoke_config = {"configurable": {"thread_id": origin_session_id}}
-            log.info("resuming HITL session %s with response %r", origin_session_id, response)
+
+            # Read the message IDs present in the checkpoint BEFORE resuming so
+            # that after astream we can diff and find only the NEW AI messages.
+            pre_ids: set[str] = set()
+            try:
+                _pre_tuple = await checkpointer.aget_tuple(invoke_config)
+                if _pre_tuple and _pre_tuple.checkpoint:
+                    _pre_msgs = _pre_tuple.checkpoint.get("channel_values", {}).get("messages", [])
+                    if hasattr(_pre_msgs, "value"):
+                        _pre_msgs = _pre_msgs.value
+                    for _m in (_pre_msgs or []):
+                        _mid = _m.get("id") if isinstance(_m, dict) else getattr(_m, "id", None)
+                        if _mid:
+                            pre_ids.add(_mid)
+                    # Verify the checkpoint actually has a pending interrupt before resuming.
+                    _has_interrupt = bool(
+                        _pre_tuple.pending_writes and any(
+                            (w[1] if isinstance(w, (tuple, list)) and len(w) > 1 else "") == "__interrupt__"
+                            for w in _pre_tuple.pending_writes
+                        )
+                    )
+                    if not _has_interrupt:
+                        log.warning(
+                            "HITL resume: no pending interrupt in checkpoint for session %s — skipping resume",
+                            origin_session_id,
+                        )
+                        return
+                else:
+                    log.warning("HITL resume: no checkpoint found for session %s", origin_session_id)
+                    return
+            except Exception as _chk_exc:
+                log.warning("HITL resume: checkpoint read failed for session %s: %s", origin_session_id, _chk_exc)
+                # Continue anyway — let astream handle it
 
             # Mark as a HITL resume so _create_task() knows it's being re-run
             # by LangGraph (not called fresh) and skips duplicate task creation.
@@ -92,63 +161,77 @@ async def resume_hitl_session(
                 "is_resume": True,
             })
 
-            # Collect AI text from the resumed stream so we can persist it to
-            # ChatHistory before releasing the session lock.
+            # Use astream (same as chat.py's proven auto-resume path).  Each
+            # chunk is a dict of {node_name: node_output}; we extract the last
+            # message from each chunk and collect any NEW AI text (not in pre_ids).
             text_parts: list[str] = []
             seen_ids: set[str] = set()
+            chunk_count = 0
             try:
+                log.warning("HITL resume: calling astream for session %s", origin_session_id)
                 async for chunk in agent.astream(Command(resume=response), config=invoke_config):
-                    if not isinstance(chunk, dict):
-                        continue
-                    # Walk all node outputs looking for AI messages
-                    for node_output in chunk.values():
-                        if not isinstance(node_output, dict):
-                            continue
-                        raw_msgs = node_output.get("messages") or []
-                        if hasattr(raw_msgs, "value"):
-                            raw_msgs = raw_msgs.value
-                        if not isinstance(raw_msgs, list):
-                            raw_msgs = []
-                        for msg in raw_msgs:
-                            msg_id = (
-                                msg.get("id") if isinstance(msg, dict)
-                                else getattr(msg, "id", None)
-                            )
-                            if msg_id and msg_id in seen_ids:
-                                continue
-                            if msg_id:
-                                seen_ids.add(msg_id)
-                            msg_type = (
-                                msg.get("type") if isinstance(msg, dict)
-                                else getattr(msg, "type", None)
-                            )
-                            if msg_type not in ("ai", "assistant"):
-                                continue
-                            content = (
-                                msg.get("content", "") if isinstance(msg, dict)
-                                else getattr(msg, "content", "")
-                            )
-                            if isinstance(content, str) and content.strip():
-                                text_parts.append(content)
-                            elif isinstance(content, list):
-                                for part in content:
-                                    if isinstance(part, dict) and part.get("type") == "text":
-                                        t = part.get("text", "")
-                                        if t.strip():
-                                            text_parts.append(t)
+                    chunk_count += 1
+                    # Each chunk is {node_name: node_output} or similar dict.
+                    # Mirrors _iter_messages() in chat.py.
+                    msgs_in_chunk: list = []
+                    if isinstance(chunk, dict):
+                        # stream_mode="values": top-level "messages" key
+                        if "messages" in chunk:
+                            raw = chunk["messages"]
+                            if hasattr(raw, "value"):
+                                raw = raw.value
+                            msgs_in_chunk.extend(raw if isinstance(raw, list) else [])
+                        else:
+                            # stream_mode="updates": {node_name: node_updates}
+                            for node_output in chunk.values():
+                                if isinstance(node_output, dict):
+                                    node_msgs = node_output.get("messages", [])
+                                    if hasattr(node_msgs, "value"):
+                                        node_msgs = node_msgs.value
+                                    msgs_in_chunk.extend(node_msgs if isinstance(node_msgs, list) else [])
+                                elif isinstance(node_output, list):
+                                    for item in node_output:
+                                        if isinstance(getattr(item, "type", None), str):
+                                            msgs_in_chunk.append(item)
+                    for msg in msgs_in_chunk:
+                        _mid = (
+                            msg.get("id") if isinstance(msg, dict)
+                            else getattr(msg, "id", None)
+                        )
+                        if _mid and _mid in pre_ids:
+                            continue  # pre-existing message, skip
+                        _collect_ai_text(msg, seen_ids, text_parts)
+                log.warning(
+                    "HITL resume: astream completed for session %s "
+                    "(chunks=%d text_parts=%d)",
+                    origin_session_id, chunk_count, len(text_parts),
+                )
             finally:
                 hitl_session_context.reset(_resume_tok)
 
-            log.info(
-                "HITL checkpoint resumed for session %s (%d text parts collected)",
-                origin_session_id, len(text_parts),
-            )
+            if not text_parts:
+                log.warning(
+                    "HITL resume: no AI text collected for session %s — "
+                    "agent produced no visible text after resuming",
+                    origin_session_id,
+                )
+            else:
+                # Persist the agent's continuation to ChatHistory so the frontend
+                # sees it when the lock is released below.
+                continuation = "\n\n".join(text_parts)
+                _append_assistant_message(
+                    origin_session_id, origin_user_id, continuation, block_type="text"
+                )
 
     except Exception as exc:
         log.error(
             "failed to resume HITL checkpoint for session %s: %s",
             origin_session_id, exc, exc_info=True,
         )
+    finally:
+        # Always release the lock — even on error — so the session never stays
+        # locked forever.  The frontend detects this and reloads history.
+        _release_session_lock(origin_session_id)
 
 
 def _restore_model(context_json: str | None, settings) -> str:
@@ -158,6 +241,15 @@ def _restore_model(context_json: str | None, settings) -> str:
         return ctx.get("_model", "") or settings.model
     except Exception:
         return settings.model
+
+
+def _restore_api_key(context_json: str | None) -> str:
+    """Extract saved api_key from task context_json (empty string if absent)."""
+    try:
+        ctx = json.loads(context_json or "{}")
+        return ctx.get("_api_key", "")
+    except Exception:
+        return ""
 
 
 def _format_task_response_text(task_type: str, response: dict) -> str:
@@ -171,6 +263,11 @@ def _format_task_response_text(task_type: str, response: dict) -> str:
         text = f"**Files uploaded: {len(files)} file(s)**"
         if files:
             text += "\n\n" + "\n".join(f"- `{f}`" for f in files)
+    elif task_type == "form_input":
+        form_data = response.get("form_data", {})
+        text = "**Form submitted.**"
+        if form_data:
+            text += "\n\n" + "\n".join(f"- **{k}**: {v}" for k, v in form_data.items())
     else:
         text = "**Report acknowledged.**"
     if feedback:
@@ -190,11 +287,18 @@ def _append_task_response_to_history(
     _append_assistant_message(session_id, user_id, text)
 
 
-def _append_assistant_message(session_id: str, user_id: str, text: str) -> None:
+def _append_assistant_message(
+    session_id: str,
+    user_id: str,
+    text: str,
+    block_type: str = "hitl_response",
+) -> None:
     """Append an assistant message to the stored ChatHistory for a session.
 
-    Uses a ``hitl_response`` block so the frontend renders it with the distinct
-    amber-accented "Task response" style rather than a regular text bubble.
+    ``block_type`` controls how the frontend renders the block:
+    - ``"hitl_response"`` — amber-accented "Task response" style (task summaries)
+    - ``"text"``          — plain assistant text bubble (agent continuation output)
+
     Reads the current messages_json, appends the message, and writes it back.
     Creates a new row if none exists yet.
     """
@@ -204,7 +308,7 @@ def _append_assistant_message(session_id: str, user_id: str, text: str) -> None:
     new_msg = {
         "id": f"msg-hitl-{uuid.uuid4().hex[:8]}",
         "role": "assistant",
-        "blocks": [{"type": "hitl_response", "text": text}],
+        "blocks": [{"type": block_type, "text": text}],
         "timestamp": datetime.utcnow().isoformat(),
         "finalized": True,
     }

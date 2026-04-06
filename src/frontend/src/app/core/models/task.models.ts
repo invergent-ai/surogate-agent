@@ -1,6 +1,6 @@
 export interface HumanTask {
   id: string;
-  taskType: 'approval' | 'report' | 'file_request';
+  taskType: 'approval' | 'report' | 'file_request' | 'form_input';
   status: 'pending' | 'completed' | 'cancelled';
   title: string;
   description: string;
@@ -42,7 +42,7 @@ export interface HumanTaskRaw {
 export function mapTask(raw: HumanTaskRaw): HumanTask {
   return {
     id: raw.id,
-    taskType: raw.task_type as 'approval' | 'report' | 'file_request',
+    taskType: raw.task_type as 'approval' | 'report' | 'file_request' | 'form_input',
     status: raw.status as 'pending' | 'completed' | 'cancelled',
     title: raw.title,
     description: raw.description,

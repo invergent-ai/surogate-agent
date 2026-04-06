@@ -48,7 +48,12 @@
       "Bash(pip:*)",
       "Bash(/home/dan/anaconda3/bin/pip install:*)",
       "Bash(libreoffice:*)",
-      "Bash(python3 -c \"import langchain.agents; print\\(langchain.agents.__file__\\)\" 2>/dev/null || echo \"not found\"\nfind /work/Product/Surogate/agent/.venv -name \"*.py\" -path \"*/langchain/agents*\" | head -10)"
+      "Bash(python3 -c \"import langchain.agents; print\\(langchain.agents.__file__\\)\" 2>/dev/null || echo \"not found\"\nfind /work/Product/Surogate/agent/.venv -name \"*.py\" -path \"*/langchain/agents*\" | head -10)",
+      "Bash(uv pip:*)",
+      "Bash(.venv/bin/pip show:*)",
+      "Read(//usr/**)",
+      "Read(//home/**)",
+      "Bash(sqlite3:*)"
     ]
   }
 }

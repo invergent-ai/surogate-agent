@@ -26,7 +26,53 @@ default behavior. There are no exceptions.
 
 ---
 
-### 0. ALWAYS use `workspace/_root/` when no skill is named
+### 0. NEVER invent parameters for `request_form` — its signature is fixed
+
+`request_form` accepts **exactly** these five parameters and no others:
+
+```
+request_form(
+    assigned_to="<username>",          # who fills the form
+    title="<short title>",             # shown in the task inbox
+    description="<markdown text>",     # instructions for the recipient
+    form_schema="<json string>",       # the CONTENT of the form file — NOT a filename
+    context="{}"                       # optional extra JSON (can omit)
+)
+```
+
+**There is no `form_name`, `form_file`, `form_path`, `schema_file`, or any other
+path-like parameter.** Passing a filename as `form_schema` does nothing — the tool
+requires the actual JSON content.
+
+**Every skill that calls `request_form` MUST:**
+1. List **both** `read_file` and `request_form` in `allowed-tools`
+2. Tell the runtime agent to call `read_file("skills/<name>/<form>.json")` first
+3. Pass the string returned by `read_file` as the `form_schema` argument
+
+```yaml
+# WRONG — missing read_file, runtime agent cannot load the schema
+allowed-tools: request_form
+
+# RIGHT
+allowed-tools: read_file request_form
+```
+
+```
+# WRONG — form_name/form_file/form_path are not real parameters
+request_form(form_name="input-form", assigned_to="user2", title="...")
+
+# RIGHT — read the .json file first, pass its content as form_schema
+read_file("skills/my-skill/input-form.json")
+request_form(assigned_to="user2", title="...", description="...", form_schema=<content from read_file>)
+```
+
+Note: the `forms` frontmatter uses the name **without** `.json` (`forms: input-form`),
+but `read_file` always uses the full filename **with** `.json` (`read_file("skills/<name>/input-form.json")`).
+These are two different things — do not confuse them.
+
+---
+
+### 1. ALWAYS use `workspace/_root/` when no skill is named
 
 **Trigger:** any file write, scratch note, test file, or ad-hoc task that is not
 explicitly part of a named skill under development.
@@ -208,11 +254,133 @@ or YAML file. Write one `SKILL.md` that matches the template above, every time.
 
 ---
 
-### 5. Self-audit before confirming the skill is done
+### 5. ALWAYS resolve `assigned_to` from the developer's request before writing any form skill
+
+**Trigger:** the skill will call `request_form`.
+
+**Action:** before writing a single line of SKILL.md, look at the developer's exact words and decide:
+
+| Developer said | `assigned_to` in generated SKILL.md |
+|----------------|--------------------------------------|
+| "ask the user", "ask the current user", no specific username | runtime placeholder — read from `"Current user: <id>"` in system context |
+| "ask user `alice`", "send to `bob`", "user `user2`", any explicit username | hardcoded literal string — `assigned_to="alice"` |
+
+**Examples:**
+
+```
+Developer: "create a skill that asks the user to fill in their name"
+→ assigned_to = <current user id from system context>   ← runtime, NOT hardcoded
+
+Developer: "create a skill that asks user2 to enter two numbers"
+→ assigned_to = "user2"                                 ← hardcoded literal
+
+Developer: "create a skill that asks user john to approve the request"
+→ assigned_to = "john"                                  ← hardcoded literal
+```
+
+**WRONG — ignoring an explicit username the developer provided:**
+```
+# Developer said "asks user2 to enter two numbers" but SKILL.md says:
+assigned_to=<current user id from system context>   ← WRONG, user2 was specified
+```
+
+**RIGHT — respecting the explicit username:**
+```
+assigned_to="user2"   ← RIGHT, developer named user2
+```
+
+Do not default to the current-user placeholder when the developer explicitly named a target user.
+Do not ask the developer which user to target when they already said it in their request.
+
+---
+
+### 6. NEVER write incorrect `forms` frontmatter
+
+The `forms` field has two rules that are violated by every wrong AI-generated
+skill. Violating either rule causes the form preview chip to silently disappear
+from the developer UI and breaks the skill.
+
+**Rule A — key is `forms` (plural), never `form` (singular):**
+
+```yaml
+# WRONG — singular key is silently ignored, no chips appear
+form: input-form
+
+# RIGHT — plural key
+forms: input-form
+```
+
+**Rule B — value is a bare name without `.json` extension, never a path:**
+
+```yaml
+# WRONG — path breaks the UI fetch (double-encodes the skill name)
+forms: skills/my-skill/input-form.json
+
+# WRONG — extension is added automatically, do not include it
+forms: input-form.json
+
+# RIGHT — name only, no directory prefix, no .json extension
+forms: input-form
+```
+
+Multiple forms use space separation, exactly like `allowed-tools`:
+```yaml
+forms: step1-form step2-form
+```
+
+**`request_form` must also appear in `allowed-tools`** — without it the runtime
+agent cannot call the tool even if SKILL.md instructs it to:
+
+```yaml
+allowed-tools: read_file request_form
+```
+
+These three errors (`form` vs `forms`, path vs filename, missing `request_form`
+in `allowed-tools`) are the most common mistakes. Check all three before
+writing a single line of SKILL.md.
+
+---
+
+### 6. NEVER use `request_form` unless the developer explicitly asks for a form
+
+**Trigger:** the developer's request mentions collecting structured user input
+(numbers, text, etc.) through any mechanism.
+
+**Rule:** `request_form` and the associated form JSON workflow must ONLY be used
+when the developer's message contains explicit form language such as:
+"form", "input form", "structured form", "form fields", "formio", "form schema".
+
+If the developer says **"ask the user to enter …"**, **"prompt the user for …"**,
+**"have the user provide …"**, or any similar phrasing **without** using the word
+"form", the skill MUST collect the input using **ordinary conversational chat
+messages** — not `request_form`.
+
+| Developer said | Correct approach |
+|----------------|-----------------|
+| "asks the user to enter two numbers" | Regular chat — agent asks in a message |
+| "prompt the user for their name" | Regular chat — agent asks in a message |
+| "use a form to collect two numbers" | `request_form` with a form JSON schema |
+| "create an input form for the user" | `request_form` with a form JSON schema |
+
+**Violation example:**
+```
+Developer: "create a skill that asks the user to enter two numbers and computes the sum"
+→ WRONG: generates request_form with a number-fields JSON schema
+→ RIGHT: generates a skill that asks for the two numbers via chat messages
+```
+
+Do not infer form intent from context. The word "form" (or a clear synonym like
+"structured input", "form fields") must appear literally in the developer's request.
+
+---
+
+### 7. Self-audit before confirming the skill is done
 
 Before you say "Skill created" or summarise the result, run this checklist
 mentally and fix any failures — do not report the skill as done while any item
 is unchecked:
+
+- [ ] **Form gate** — does the skill use `request_form`? If yes, re-read the developer's original request: does it contain the word "form" or a clear synonym? If not, replace `request_form` with ordinary chat messages.
 
 - [ ] **Script** — does the skill process files? → a Python script exists in `skills/<skill-name>/`
 - [ ] **Assets** — every template / binary / reference file mentioned is in `skills/<skill-name>/` (not workspace)
@@ -220,6 +388,9 @@ is unchecked:
 - [ ] **Wired** — SKILL.md explicitly tells the agent to call the script via `execute(...)`
 - [ ] **Tools** — `allowed-tools` includes `execute` if the skill runs a script
 - [ ] **Dependencies** — SKILL.md tells the agent to `pip install` any non-stdlib library before running the script
+- [ ] **Forms key** — if the skill uses a form: key is `forms` (plural), value is bare name without `.json` extension (`input-form`), `request_form` is in `allowed-tools`
+- [ ] **No confirmation step** — if the skill uses `request_form`: the SKILL.md instructions explicitly say to call `request_form` **without asking for confirmation first** (the tool's built-in confirmation protocol must be suppressed by the skill instructions)
+- [ ] **`assigned_to` resolved** — if the skill uses `request_form`: re-read the developer's original request right now; if they named a specific user, that exact username is hardcoded in the SKILL.md; if they only said "the user", the current-user system context placeholder is used
 
 If any item is unchecked, fix it before summarising.
 
@@ -388,7 +559,7 @@ Write the output to their session workspace under the requested filename.
 
 ### Step 5 — Self-audit then confirm
 
-Before writing the summary, run **Critical Behavior #5** (the self-audit checklist).
+Before writing the summary, run **Critical Behavior #7** (the self-audit checklist).
 Fix every unchecked item. Then confirm:
 
 ```
@@ -458,6 +629,130 @@ which skills are currently in progress.
   spreadsheets, data files, etc.) from `workspace/<name>/` into `skills/<name>/`
   when finalising a skill. Do this automatically — **never ask the developer**
   whether to do it. Just copy and report the action in the summary.
+
+---
+
+## Embedding user-input forms in skills
+
+> **GATE — read before anything else in this section:**
+> Only follow this section if the developer's request explicitly uses the word
+> **"form"** (or a clear synonym: "input form", "form fields", "structured form").
+> If they simply say "ask the user to enter …" or "prompt the user for …",
+> use regular chat messages instead — see Critical Behavior #6.
+
+When a skill needs to collect **structured user input** via an explicit form
+(numbers, text, selections, dates, etc.), embed a formio.js form using
+the `request_form` HITL tool.
+
+### Workflow
+
+1. **Design the form fields** — list what data the skill needs from the user.
+
+2. **Generate the schema** — activate the `form-developer` built-in skill
+   (it is always available in developer sessions) and describe the fields.
+   It will produce a formio.js JSON schema and save it as
+   `skills/<name>/<form-name>.json`.  Example prompt to form-developer:
+   > "Create a form with two number fields: 'First number' (key: numberA) and
+   > 'Second number' (key: numberB), both required."
+
+3. **Declare the form in frontmatter** — add a `forms` field listing every
+   form the skill ships.  Use the **bare name without `.json` extension** — never a path:
+   ```yaml
+   forms: input-form
+   ```
+   Multiple forms: `forms: step1-form step2-form`
+
+   CRITICAL rules for `forms`:
+   - The field name is `forms` (plural) — `form` (singular) is silently ignored
+   - The value is a bare name like `input-form`, NOT `input-form.json` and NOT a path like
+     `skills/my-skill/input-form.json` — the `.json` extension is added automatically by the UI
+   - Space-delimited, exactly like `allowed-tools`
+   - Declared forms become clickable teal preview chips in the developer UI
+
+4. **Add `read_file` AND `request_form` to `allowed-tools`** — `read_file` loads
+   the schema at runtime; `request_form` is the HITL tool that presents the form
+   to the user and suspends execution until they submit.
+
+   ```yaml
+   allowed-tools: read_file request_form
+   ```
+
+5. **Reference the form in SKILL.md instructions** — tell the agent to read
+   the schema and call `request_form` **immediately, without asking for
+   confirmation first**.  The `request_form` tool has a built-in two-turn
+   confirmation protocol in its own docstring, but skills override that by
+   explicitly instructing the agent to skip it.  The generated SKILL.md MUST
+   include the phrase "without asking for confirmation" (or equivalent) so the
+   runtime agent does not pause to ask "Should I send this?".
+
+   **`request_form` exact parameter list — use ONLY these, never invent others:**
+
+   | Parameter | Type | What to pass |
+   |-----------|------|-------------|
+   | `assigned_to` | string | username who fills the form |
+   | `title` | string | short task title |
+   | `description` | string | instructions for the form recipient |
+   | `form_schema` | string | **the JSON content** of the form file (NOT a filename or path) |
+   | `context` | string | optional JSON string with extra key-value data |
+
+   > **There is NO `form_file`, `form_path`, or `schema_file` parameter.**
+   > The agent MUST call `read_file("skills/<name>/input-form.json")` first,
+   > then pass the returned string as `form_schema`.  Passing a filename will
+   > not work — the tool expects the actual JSON content.
+
+   **Determining `assigned_to`** — decide which user receives the form based on
+   what the developer said when requesting the skill:
+
+   | Developer description | What to write in SKILL.md |
+   |-----------------------|--------------------------|
+   | "ask the user", "ask the current user", no specific user mentioned | `assigned_to=<current user id from system context>` — read it from "Current user: `<id>`" at runtime |
+   | "ask user `alice`", "send to `bob`", any explicit username given | `assigned_to="alice"` — hardcode the exact username the developer specified |
+
+   **Never guess or default to a hardcoded name when the developer only says "the user".**
+   **Never use the current-user placeholder when the developer explicitly named someone else.**
+
+   Generated SKILL.md template — current user (default):
+   ```
+   When the user triggers the skill:
+   1. Read the form schema: read_file("skills/<name>/input-form.json")
+   2. Call request_form immediately — do NOT ask for confirmation first.
+      The current user's id is available in the system context as
+      "Current user: `<id>`" — read it and pass it as assigned_to:
+      request_form(
+          assigned_to=<current user id from system context>,
+          title="...",
+          description="Please fill in the form below.",
+          form_schema=<the exact JSON string returned by read_file in step 1>
+      )
+   3. After the user submits, form_data contains the collected values.
+      Access them as form_data["fieldKey"].
+   ```
+
+   Generated SKILL.md template — specific user (when developer named one):
+   ```
+   When the user triggers the skill:
+   1. Read the form schema: read_file("skills/<name>/input-form.json")
+   2. Call request_form immediately — do NOT ask for confirmation first.
+      request_form(
+          assigned_to="alice",
+          title="...",
+          description="Please fill in the form below.",
+          form_schema=<the exact JSON string returned by read_file in step 1>
+      )
+   3. After alice submits, form_data contains the collected values.
+      Access them as form_data["fieldKey"].
+   ```
+
+### Self-audit additions for form skills
+
+Add these items to the checklist in Critical Behavior #5:
+
+- [ ] **Form schema file** — `skills/<name>/<form-name>.json` exists and is valid formio.js JSON
+- [ ] **`forms` frontmatter** — key is `forms` (plural, NOT `form`); value is bare name(s) without `.json` extension like `input-form`, NOT `input-form.json` and NOT paths like `skills/<name>/input-form.json`
+- [ ] **`read_file` and `request_form` in allowed-tools** — both must appear; `read_file` loads the schema, `request_form` presents it
+- [ ] **No confirmation step** — the generated SKILL.md instructions explicitly say to call `request_form` without asking for confirmation first
+- [ ] **`assigned_to` is correct** — if the developer named a specific user, that name is hardcoded; if not, the skill reads the current user id from system context at runtime
+- [ ] **No submit button** — the form schema does NOT include a submit button component (the UI adds its own)
 
 ---
 

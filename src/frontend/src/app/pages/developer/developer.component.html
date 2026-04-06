@@ -160,6 +160,7 @@
             (detailClosed)="onSkillDetailClosed()"
             (skillsLoaded)="onSkillsLoaded($event)"
             (historyCleared)="onSkillHistoryCleared()"
+            (formPreviewTask)="formPreviewTask.set($event)"
           />
         </div>
       </div>
@@ -188,6 +189,9 @@
         [skill]="activeSkill()"
         [historyKey]="activeSkill() ? 'dev:' + activeSkill() : ''"
         placeholder="Describe the skill you want to create or modify…"
+        [activeTask]="formPreviewTask()"
+        [activeTaskPreviewMode]="true"
+        (taskDismissed)="formPreviewTask.set(null)"
         (skillDetected)="onSkillDetected($event)"
         (settingsRequired)="settingsOpen.set(true)"
         (hasMessages)="chatHasMessages.set($event)"

@@ -177,6 +177,8 @@ async def respond_to_task(
         if payload.decision not in ("approved", "rejected"):
             raise HTTPException(status_code=422, detail="decision must be 'approved' or 'rejected'")
         response["decision"] = payload.decision
+    elif task.task_type == "form_input":
+        response["form_data"] = payload.form_data or {}
     else:
         response["acknowledged"] = True
         if payload.acknowledged is False:
@@ -203,21 +205,19 @@ async def respond_to_task(
     )
 
     # Write the task response to ChatHistory immediately (sync) so the
-    # originator's session shows it as soon as the lock is released.
+    # originator's history already contains it when the lock is released.
     from surogate_agent.hitl.resume import (
         _append_task_response_to_history,
         _release_session_lock,
+        resume_hitl_session,
     )
     _append_task_response_to_history(origin_session_id, origin_user_id, task_type, response)
 
-    # Release the session lock now — ChatHistory is already updated above, so
-    # the frontend's history reload on unlock will show the task response.
-    _release_session_lock(origin_session_id)
-
-    # Schedule a background task to resume the LangGraph checkpoint so the
-    # agent has full context if the originator asks a follow-up question.
+    # Schedule the LangGraph resume.  The lock is released INSIDE
+    # resume_hitl_session after the agent finishes, so the frontend's
+    # history-reload on unlock sees both the task-response message and the
+    # agent's continuation output in a single reload.
     try:
-        from surogate_agent.hitl.resume import resume_hitl_session
         asyncio.create_task(resume_hitl_session(
             origin_session_id=origin_session_id,
             origin_user_id=origin_user_id,
@@ -226,6 +226,9 @@ async def respond_to_task(
         ))
     except Exception as exc:
         log.warning("could not schedule HITL checkpoint resume for task %s: %s", task_id, exc)
+        # If we can't schedule the resume, release the lock immediately so the
+        # session doesn't stay locked forever.
+        _release_session_lock(origin_session_id)
 
     return {"ok": True}
 
@@ -298,12 +301,13 @@ async def upload_task_files(
     from surogate_agent.hitl.resume import (
         _append_task_response_to_history,
         _release_session_lock,
+        resume_hitl_session,
     )
     _append_task_response_to_history(origin_session_id, origin_user_id, task_type, response)
-    _release_session_lock(origin_session_id)
 
+    # Schedule LangGraph resume; lock is released INSIDE resume_hitl_session
+    # after the agent finishes, so the frontend sees the full continuation.
     try:
-        from surogate_agent.hitl.resume import resume_hitl_session
         asyncio.create_task(resume_hitl_session(
             origin_session_id=origin_session_id,
             origin_user_id=origin_user_id,
@@ -312,6 +316,7 @@ async def upload_task_files(
         ))
     except Exception as exc:
         log.warning("could not schedule HITL checkpoint resume for task %s: %s", task_id, exc)
+        _release_session_lock(origin_session_id)
 
     return {"ok": True, "files": saved_paths}
 

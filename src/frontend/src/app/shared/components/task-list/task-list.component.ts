@@ -133,6 +133,40 @@ type Tab = 'inbox' | 'sent';
             </section>
           }
 
+          <!-- Pending form inputs -->
+          @if (inboxFormInputs().length > 0) {
+            <section class="p-3 flex flex-col gap-2" [class.border-t]="inboxApprovals().length > 0 || inboxReports().length > 0" [class.border-gray-200]="inboxApprovals().length > 0 || inboxReports().length > 0">
+              <div class="flex items-center gap-2 px-1">
+                <h3 class="text-xs font-semibold text-gray-500 dark:text-zinc-400 uppercase tracking-wider flex-1">Forms</h3>
+                <span class="text-xs font-semibold bg-teal-100 dark:bg-teal-900/40 text-teal-700 dark:text-teal-400 rounded-full px-1.5 py-0.5">
+                  {{ inboxFormInputs().length }}
+                </span>
+              </div>
+              @for (task of inboxFormInputs(); track task.id) {
+                <button
+                  (click)="taskSelected.emit(task)"
+                  class="w-full flex flex-col gap-1 rounded-xl border border-teal-200 dark:border-teal-800/50 bg-white dark:bg-zinc-900 px-3 py-2.5 text-left hover:border-teal-400 dark:hover:border-teal-600/60 hover:bg-teal-50/30 dark:hover:bg-teal-950/10 transition-colors"
+                >
+                  <div class="flex items-start gap-2">
+                    <svg class="w-3.5 h-3.5 flex-none mt-0.5 text-teal-500 dark:text-teal-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/>
+                    </svg>
+                    <span class="flex-1 text-sm font-medium text-gray-800 dark:text-zinc-100 leading-tight">{{ task.title }}</span>
+                    <span class="flex-none text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-teal-100 dark:bg-teal-900/30 text-teal-700 dark:text-teal-400 whitespace-nowrap">pending</span>
+                  </div>
+                  <div class="flex items-center gap-1 pl-5 text-xs text-gray-400 dark:text-zinc-500">
+                    <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
+                    </svg>
+                    <span>{{ task.assignedBy }}</span>
+                    <span class="mx-1">&middot;</span>
+                    <span>{{ relativeTime(task.createdAt) }}</span>
+                  </div>
+                </button>
+              }
+            </section>
+          }
+
           <!-- Pending file requests -->
           @if (inboxFileRequests().length > 0) {
             <section class="p-3 flex flex-col gap-2" [class.border-t]="inboxApprovals().length > 0 || inboxReports().length > 0" [class.border-gray-200]="inboxApprovals().length > 0 || inboxReports().length > 0">
@@ -290,6 +324,8 @@ type Tab = 'inbox' | 'sent';
         >{{ task.response?.decision ?? task.status }}</span>
       } @else if (task.taskType === 'file_request') {
         <span class="flex-none text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 whitespace-nowrap">uploaded</span>
+      } @else if (task.taskType === 'form_input') {
+        <span class="flex-none text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 whitespace-nowrap">submitted</span>
       } @else {
         <span class="flex-none text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 whitespace-nowrap">ack'd</span>
       }
@@ -303,6 +339,10 @@ type Tab = 'inbox' | 'sent';
       } @else if (task.taskType === 'file_request') {
         <svg class="w-3.5 h-3.5 flex-none mt-0.5 text-violet-500 dark:text-violet-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
           <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/>
+        </svg>
+      } @else if (task.taskType === 'form_input') {
+        <svg class="w-3.5 h-3.5 flex-none mt-0.5 text-teal-500 dark:text-teal-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/>
         </svg>
       } @else {
         <svg class="w-3.5 h-3.5 flex-none mt-0.5 text-blue-500 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -324,6 +364,7 @@ export class TaskListComponent implements OnInit {
   inboxPending      = computed(() => this.taskSvc.assignedTasks().filter(t => t.status === 'pending'));
   inboxApprovals    = computed(() => this.inboxPending().filter(t => t.taskType === 'approval'));
   inboxReports      = computed(() => this.inboxPending().filter(t => t.taskType === 'report'));
+  inboxFormInputs   = computed(() => this.inboxPending().filter(t => t.taskType === 'form_input'));
   inboxFileRequests = computed(() => this.inboxPending().filter(t => t.taskType === 'file_request'));
   inboxCompleted = computed(() =>
     this.taskSvc.assignedTasks().filter(t => t.status !== 'pending').slice(0, 10)

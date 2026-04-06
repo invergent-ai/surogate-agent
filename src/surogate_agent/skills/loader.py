@@ -74,6 +74,7 @@ class SkillInfo:
     role_restriction: Optional[str] = None   # "developer", "user", or None (all)
     allowed_tools: list[str] = field(default_factory=list)
     experts: list[str] = field(default_factory=list)  # Expert sub-agent names
+    forms: list[str] = field(default_factory=list)     # Form JSON filenames (formio.js schemas)
     version: str = "0.1.0"
     raw_frontmatter: dict = field(default_factory=dict)
 
@@ -198,7 +199,7 @@ def _extract_frontmatter_fields(fm_text: str) -> dict:
     The caller already handles defaults for every field, so this function only
     populates what it can confidently read.
     """
-    known_keys = {"name", "description", "role-restriction", "allowed-tools", "experts", "version"}
+    known_keys = {"name", "description", "role-restriction", "allowed-tools", "experts", "forms", "version"}
     line_re = re.compile(r"^([\w-]+)\s*:\s*(.*?)\s*$")
     fm: dict = {}
     for line in fm_text.splitlines():
@@ -352,6 +353,7 @@ def _parse_skill(skill_dir: Path, skill_md: Path) -> SkillInfo:
         role_restriction=fm.get("role-restriction"),
         allowed_tools=_parse_allowed_tools(fm.get("allowed-tools")),
         experts=_parse_allowed_tools(fm.get("experts")),
+        forms=_parse_allowed_tools(fm.get("forms")),
         version=str(fm.get("version", "0.1.0")),
         raw_frontmatter=fm,
     )
