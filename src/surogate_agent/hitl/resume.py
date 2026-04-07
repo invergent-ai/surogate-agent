@@ -107,6 +107,7 @@ async def resume_hitl_session(
                 mcp_scripts_dir=settings.mcp_scripts_dir,
                 model=_restore_model(context_json, settings),
                 api_key=_restore_api_key(context_json),
+                experts=_restore_experts(),
             )
 
             agent = create_agent(
@@ -154,18 +155,30 @@ async def resume_hitl_session(
 
             # Mark as a HITL resume so _create_task() knows it's being re-run
             # by LangGraph (not called fresh) and skips duplicate task creation.
-            from surogate_agent.core.agent import hitl_session_context
+            from surogate_agent.core.agent import hitl_session_context, subagent_activity_queue
             _resume_tok = hitl_session_context.set({
                 "thread_id": origin_session_id,
                 "user_id": origin_user_id,
                 "is_resume": True,
             })
 
+            # Set up subagent activity queue so _CapturingRunnable can forward
+            # expert message histories (mirrors the setup in chat.py lines 522-526).
+            # Without this the queue ContextVar is None and all expert activity is
+            # silently dropped by _CapturingRunnable.ainvoke().
+            import asyncio as _asyncio
+            _sa_queue: _asyncio.Queue = _asyncio.Queue()
+            _sa_tok = subagent_activity_queue.set(_sa_queue)
+
             # Use astream (same as chat.py's proven auto-resume path).  Each
             # chunk is a dict of {node_name: node_output}; we extract the last
-            # message from each chunk and collect any NEW AI text (not in pre_ids).
+            # message from each chunk and collect any NEW messages (not in pre_ids).
             text_parts: list[str] = []
             seen_ids: set[str] = set()
+            # Accumulate ALL new messages so we can build the full block structure
+            # (tool_call blocks + subagent activity) for ChatHistory, not just text.
+            all_new_messages: list = []
+            seen_new_ids: set[str] = set()
             chunk_count = 0
             try:
                 log.warning("HITL resume: calling astream for session %s", origin_session_id)
@@ -201,26 +214,46 @@ async def resume_hitl_session(
                         if _mid and _mid in pre_ids:
                             continue  # pre-existing message, skip
                         _collect_ai_text(msg, seen_ids, text_parts)
+                        # Accumulate new messages for full block building (deduplicate
+                        # since stream_mode="values" replays all messages every chunk).
+                        if not _mid or _mid not in seen_new_ids:
+                            all_new_messages.append(msg)
+                            if _mid:
+                                seen_new_ids.add(_mid)
                 log.warning(
                     "HITL resume: astream completed for session %s "
-                    "(chunks=%d text_parts=%d)",
-                    origin_session_id, chunk_count, len(text_parts),
+                    "(chunks=%d text_parts=%d new_msgs=%d)",
+                    origin_session_id, chunk_count, len(text_parts), len(all_new_messages),
                 )
             finally:
                 hitl_session_context.reset(_resume_tok)
+                subagent_activity_queue.reset(_sa_tok)
 
-            if not text_parts:
-                log.warning(
-                    "HITL resume: no AI text collected for session %s — "
-                    "agent produced no visible text after resuming",
-                    origin_session_id,
-                )
-            else:
-                # Persist the agent's continuation to ChatHistory so the frontend
-                # sees it when the lock is released below.
+            # Collect subagent activities captured by _CapturingRunnable.
+            subagent_activities = _collect_subagent_activities(_sa_queue)
+            log.debug(
+                "HITL resume: subagent activities collected: %s",
+                list(subagent_activities.keys()),
+            )
+
+            # Build the full ChatMessage block structure from the new messages so
+            # the frontend sees tool_call blocks (including task/expert delegation)
+            # with subagent activity — not just the final text summary.
+            blocks = _build_resume_blocks(all_new_messages, subagent_activities)
+
+            if blocks:
+                _append_message_blocks(origin_session_id, origin_user_id, blocks)
+            elif text_parts:
+                # Fallback: plain text when block building produces nothing
                 continuation = "\n\n".join(text_parts)
                 _append_assistant_message(
                     origin_session_id, origin_user_id, continuation, block_type="text"
+                )
+            else:
+                log.warning(
+                    "HITL resume: no AI text collected for session %s — "
+                    "agent produced no visible output after resuming",
+                    origin_session_id,
                 )
 
     except Exception as exc:
@@ -232,6 +265,210 @@ async def resume_hitl_session(
         # Always release the lock — even on error — so the session never stays
         # locked forever.  The frontend detects this and reloads history.
         _release_session_lock(origin_session_id)
+
+
+def _extract_msg_text(content: object) -> str:
+    """Extract plain text from a LangChain message content (str or list of parts)."""
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, list):
+        parts: list[str] = []
+        for part in content:
+            part_type = part.get("type") if isinstance(part, dict) else getattr(part, "type", None)
+            if part_type == "text":
+                t = part.get("text", "") if isinstance(part, dict) else getattr(part, "text", "")
+                if t:
+                    parts.append(t)
+        return " ".join(parts).strip()
+    return ""
+
+
+def _extract_activity_items(messages: list) -> list[dict]:
+    """Convert an expert subagent's message list to frontend SubagentActivityItem dicts."""
+    items: list[dict] = []
+    pending: dict[str, int] = {}  # tool_call_id → index in items
+
+    for msg in messages:
+        msg_type = msg.get("type") if isinstance(msg, dict) else getattr(msg, "type", None)
+
+        if msg_type in ("ai", "assistant"):
+            content = msg.get("content", "") if isinstance(msg, dict) else getattr(msg, "content", "")
+            tool_calls = msg.get("tool_calls", []) if isinstance(msg, dict) else getattr(msg, "tool_calls", [])
+
+            if isinstance(content, list):
+                for part in content:
+                    pt = part.get("type") if isinstance(part, dict) else getattr(part, "type", None)
+                    if pt == "thinking":
+                        t = part.get("thinking", "") if isinstance(part, dict) else getattr(part, "thinking", "")
+                        if t:
+                            items.append({"type": "thinking", "text": t})
+
+            for tc in (tool_calls or []):
+                tc_id = tc.get("id") if isinstance(tc, dict) else getattr(tc, "id", "")
+                tc_name = tc.get("name") if isinstance(tc, dict) else getattr(tc, "name", "")
+                tc_args = tc.get("args", {}) if isinstance(tc, dict) else getattr(tc, "args", {})
+                idx = len(items)
+                if tc_id:
+                    pending[tc_id] = idx
+                items.append({"type": "tool_call", "name": tc_name, "args": tc_args})
+
+            text = _extract_msg_text(content)
+            if text:
+                items.append({"type": "text", "text": text})
+
+        elif msg_type == "tool":
+            tc_id = msg.get("tool_call_id") if isinstance(msg, dict) else getattr(msg, "tool_call_id", "")
+            content = msg.get("content", "") if isinstance(msg, dict) else getattr(msg, "content", "")
+            if tc_id and tc_id in pending:
+                items[pending[tc_id]]["result"] = _extract_msg_text(content)
+
+    return items
+
+
+def _collect_subagent_activities(sa_queue: object) -> dict[str, dict]:
+    """Drain a subagent_activity_queue and return {expert_name: activity_dict}.
+
+    Mirrors the queue format written by _CapturingRunnable:
+    each entry is (expert_name, messages, is_partial).
+    The last entry per expert (partial or final) is used.
+    """
+    activities: dict[str, dict] = {}
+    while True:
+        try:
+            entry = sa_queue.get_nowait()  # type: ignore[union-attr]
+            name: str = entry[0]
+            messages: list = entry[1]
+            activities[name] = {
+                "subagent": name,
+                "items": _extract_activity_items(messages),
+            }
+        except Exception:
+            break
+    return activities
+
+
+def _build_resume_blocks(messages: list, subagent_activities: dict[str, dict]) -> list[dict]:
+    """Convert new LangChain messages from a resumed HITL session into frontend
+    ChatMessage block dicts (text, thinking, tool_call with optional subagentActivity).
+
+    Returns an empty list when no AI-originated content was found so the caller
+    can fall back to the plain-text path.
+    """
+    blocks: list[dict] = []
+    pending: dict[str, int] = {}  # tool_call_id → block index
+    has_ai_content = False
+
+    for msg in messages:
+        msg_type = msg.get("type") if isinstance(msg, dict) else getattr(msg, "type", None)
+
+        if msg_type in ("ai", "assistant"):
+            has_ai_content = True
+            content = msg.get("content", "") if isinstance(msg, dict) else getattr(msg, "content", "")
+            tool_calls = msg.get("tool_calls", []) if isinstance(msg, dict) else getattr(msg, "tool_calls", [])
+
+            # Thinking blocks
+            if isinstance(content, list):
+                for part in content:
+                    pt = part.get("type") if isinstance(part, dict) else getattr(part, "type", None)
+                    if pt == "thinking":
+                        t = part.get("thinking", "") if isinstance(part, dict) else getattr(part, "thinking", "")
+                        if t:
+                            blocks.append({"type": "thinking", "text": t})
+
+            # Tool-call blocks
+            for tc in (tool_calls or []):
+                tc_id = tc.get("id") if isinstance(tc, dict) else getattr(tc, "id", "")
+                tc_name = tc.get("name") if isinstance(tc, dict) else getattr(tc, "name", "")
+                tc_args = tc.get("args", {}) if isinstance(tc, dict) else getattr(tc, "args", {})
+                block: dict = {"type": "tool_call", "name": tc_name, "args": tc_args}
+                # Attach captured expert activity for `task` tool calls
+                if tc_name == "task" and isinstance(tc_args, dict):
+                    expert_name = tc_args.get("subagent_type", "")
+                    if expert_name and expert_name in subagent_activities:
+                        block["subagentActivity"] = subagent_activities[expert_name]
+                idx = len(blocks)
+                if tc_id:
+                    pending[tc_id] = idx
+                blocks.append(block)
+
+            # Text block
+            text = _extract_msg_text(content)
+            if text:
+                blocks.append({"type": "text", "text": text})
+
+        elif msg_type == "tool":
+            # Attach tool result to its preceding tool_call block
+            tc_id = msg.get("tool_call_id") if isinstance(msg, dict) else getattr(msg, "tool_call_id", "")
+            content = msg.get("content", "") if isinstance(msg, dict) else getattr(msg, "content", "")
+            if tc_id and tc_id in pending:
+                blocks[pending[tc_id]]["result"] = _extract_msg_text(content)
+
+    return blocks if has_ai_content else []
+
+
+def _append_message_blocks(session_id: str, user_id: str, blocks: list[dict]) -> None:
+    """Append a fully-structured assistant message (with tool_call blocks) to ChatHistory.
+
+    Used by the HITL resume path instead of _append_assistant_message so that
+    tool_call blocks (including task/expert delegation with subagentActivity) are
+    preserved in the stored history and rendered correctly when the frontend reloads.
+    """
+    from surogate_agent.auth.database import SessionLocal
+    from surogate_agent.auth.models import ChatHistory
+
+    new_msg = {
+        "id": f"msg-hitl-{uuid.uuid4().hex[:8]}",
+        "role": "assistant",
+        "blocks": blocks,
+        "timestamp": datetime.utcnow().isoformat(),
+        "finalized": True,
+    }
+    try:
+        with SessionLocal() as db:
+            record = db.query(ChatHistory).filter_by(
+                session_id=session_id, user_id=user_id,
+            ).first()
+            if record:
+                messages = json.loads(record.messages_json or "[]")
+                messages.append(new_msg)
+                record.messages_json = json.dumps(messages)
+                record.updated_at = datetime.utcnow()
+            else:
+                db.add(ChatHistory(
+                    session_id=session_id,
+                    user_id=user_id,
+                    messages_json=json.dumps([new_msg]),
+                ))
+            db.commit()
+        log.info(
+            "HITL continuation (full blocks) written to ChatHistory for session %s (%d blocks)",
+            session_id, len(blocks),
+        )
+    except Exception as exc:
+        log.error(
+            "failed to write HITL continuation blocks to ChatHistory for session %s: %s",
+            session_id, exc, exc_info=True,
+        )
+
+
+def _restore_experts() -> list[dict]:
+    """Load all experts from the database for the resumed session.
+
+    Mirrors the expert-loading block in chat.py so that the reconstructed
+    agent has the same ``task`` tool (expert subagents) as the original.
+    Without this, config.experts is empty, no subagents are built, and the
+    agent cannot delegate to experts declared in the active skill's SKILL.md.
+    """
+    try:
+        from surogate_agent.auth.database import SessionLocal
+        from surogate_agent.auth.schemas import ExpertResponse
+        from surogate_agent.auth.service import list_all_experts
+        with SessionLocal() as db:
+            db_experts = list_all_experts(db)
+            return [ExpertResponse.model_validate(e).model_dump() for e in db_experts]
+    except Exception as exc:
+        log.debug("could not load experts for HITL resume: %s", exc)
+        return []
 
 
 def _restore_model(context_json: str | None, settings) -> str:

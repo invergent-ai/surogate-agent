@@ -1556,19 +1556,28 @@ def _build_system_suffix(
             f"{session_snapshot}"
         )
 
-    # User role: inject a strict gate so the agent only uses expert sub-agents
-    # when the currently-active skill's SKILL.md explicitly authorises it.
-    # deepagents already lists available subagents inside the task-tool description,
-    # so we do NOT repeat them here — we only add the behavioural constraint.
+    # User role: inject a mandatory delegation rule so the agent always uses
+    # the task tool when the active skill explicitly instructs it to delegate
+    # to a named expert.  The wording is intentionally stronger than "permitted":
+    # deepagents' own TASK_SYSTEM_PROMPT discourages the task tool for "trivial"
+    # work (e.g. simple arithmetic), which would otherwise cause the agent to
+    # compute results directly rather than delegating as the skill requires.
     if not role_ctx.is_developer and config.experts:
         parts.append(
-            "## Expert sub-agents — strict usage rule\n\n"
+            "## Expert sub-agents — mandatory delegation rule\n\n"
             "Expert sub-agents are available via the `task` tool. "
-            "**You MUST NOT call the `task` tool on your own initiative.** "
-            "The ONLY time you may call it is when the currently active skill's "
-            "SKILL.md explicitly instructs you to delegate to a specific expert. "
-            "Use exactly the expert name the skill names — do not substitute, "
-            "combine, or add experts the skill did not declare.\n"
+            "**When the currently active skill's SKILL.md instructs you to delegate "
+            "to a named expert, you MUST call the `task` tool with that expert's name "
+            "as `subagent_type`.** "
+            "This is a hard requirement — do NOT answer, compute, or summarise the "
+            "result yourself instead of delegating. "
+            "The general guidance about avoiding the task tool for 'trivial' tasks does "
+            "NOT apply to expert delegation: always follow the skill's explicit "
+            "delegation instruction regardless of how simple the request seems.\n\n"
+            "Do NOT call the `task` tool for any purpose other than explicit "
+            "skill-instructed delegation to a named expert. "
+            "Use exactly the expert name the skill declares — do not substitute, "
+            "combine, or add experts the skill did not name.\n"
         )
 
     # Expert catalog — developer role only, when expert_lookup_enabled is set.
