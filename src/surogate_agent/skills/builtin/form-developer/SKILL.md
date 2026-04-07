@@ -106,6 +106,26 @@ filename must be kebab-case and end with `.json` (e.g. `input-form.json`).
   "validate": { "required": true } }
 ```
 
+### File upload
+
+**Always set `"storage": "base64"`** — this encodes the file in the browser and
+includes it in the form submission.  The server decodes it, saves it to the
+session's input-files folder, and returns the workspace path in `form_data`.
+
+```json
+{ "type": "file", "key": "attachments", "label": "Attachments",
+  "storage": "base64", "multiple": true,
+  "validate": { "required": false } }
+
+{ "type": "file", "key": "document", "label": "Upload Document",
+  "storage": "base64", "multiple": false,
+  "validate": { "required": true } }
+```
+
+After submission the agent receives the saved paths in `form_data["key"]`
+(e.g. `["sessions/<id>/report.pdf"]`) and can read or process those files
+exactly like files uploaded through `request_files`.
+
 ### Layout
 
 Use `columns` to place fields side-by-side.  Column `width` values must sum
@@ -206,6 +226,8 @@ Every component accepts a `validate` object:
   submitted data field name — the agent reads `form_data["key"]` after submit).
 - Use `"validate": { "required": true }` on fields the skill needs; leave
   others optional.
+- File-upload components **must** include `"storage": "base64"` — any other
+  storage mode will not work in this environment.
 - Do **not** add a submit button component — the UI provides its own.
 - After generating the schema, save it with `write_file` to
   `skills/<skill-name>/<form-name>.json` and tell the caller the filename.

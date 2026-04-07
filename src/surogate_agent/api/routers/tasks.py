@@ -30,6 +30,72 @@ except ImportError:
 log = get_logger(__name__)
 
 
+def _save_form_files(form_data: dict, session_id: str, db: DBSession) -> dict:
+    """Detect formio.js file-upload fields in *form_data*, save them to the
+    originating session's workspace, and register them as input files.
+
+    Formio submits file components as a list of objects::
+
+        [{"name": "doc.pdf", "url": "data:application/pdf;base64,<b64>", ...}]
+
+    Each such field is decoded, written to the session workspace directory, and
+    registered in ``SessionInputFiles`` (same path as ``request_files``).
+    The raw base64 payload is replaced with the workspace-relative file path so
+    the agent receives a clean ``form_data`` without large binary strings.
+    Fields that are not file-upload lists are left unchanged.
+    """
+    import base64
+    import re as _re
+
+    from surogate_agent.api.deps import get_settings
+    from surogate_agent.api.routers.sessions import _add_input_file
+    from surogate_agent.core.session import SessionManager
+
+    settings = get_settings()
+    sm = SessionManager(settings.sessions_dir)
+    session = sm.resume_or_create(session_id)
+    session.workspace_dir.mkdir(parents=True, exist_ok=True)
+
+    processed = dict(form_data)
+    for key, value in form_data.items():
+        if not isinstance(value, list) or not value:
+            continue
+        # Detect formio file objects: list of dicts with 'name' + base64 'url'
+        file_items = [
+            item for item in value
+            if isinstance(item, dict)
+            and isinstance(item.get("name"), str)
+            and isinstance(item.get("url"), str)
+            and item["url"].startswith("data:")
+            and ";base64," in item["url"]
+        ]
+        if not file_items:
+            continue
+
+        saved_refs: list[str] = []
+        for item in file_items:
+            raw_name: str = item["name"]
+            # Sanitize: strip path separators, null bytes, and leading dots
+            safe_name = _re.sub(r"[/\\:\0]", "_", raw_name).lstrip(".") or "upload"
+            try:
+                _, b64 = item["url"].split(";base64,", 1)
+                dest = session.workspace_dir / safe_name
+                dest.write_bytes(base64.b64decode(b64))
+                _add_input_file(session_id, safe_name, db)
+                saved_refs.append(f"sessions/{session_id}/{safe_name}")
+                log.info(
+                    "form file upload saved: session=%s key=%r file=%s",
+                    session_id, key, safe_name,
+                )
+            except Exception as exc:
+                log.warning("could not save form file %r: %s", raw_name, exc)
+
+        if saved_refs:
+            processed[key] = saved_refs
+
+    return processed
+
+
 def _utc_iso(dt: datetime) -> str:
     """Return an ISO-8601 string with an explicit UTC marker.
 
@@ -178,7 +244,12 @@ async def respond_to_task(
             raise HTTPException(status_code=422, detail="decision must be 'approved' or 'rejected'")
         response["decision"] = payload.decision
     elif task.task_type == "form_input":
-        response["form_data"] = payload.form_data or {}
+        form_data = payload.form_data or {}
+        # Save any formio file-upload fields to the session workspace before
+        # committing — _save_form_files calls _add_input_file which needs db open.
+        if form_data:
+            form_data = _save_form_files(form_data, task.origin_session_id, db)
+        response["form_data"] = form_data
     else:
         response["acknowledged"] = True
         if payload.acknowledged is False:

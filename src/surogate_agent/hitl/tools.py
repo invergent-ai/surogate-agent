@@ -190,8 +190,13 @@ def request_form(
     text, selections, dates, etc.) defined by a formio.js JSON schema.  The
     recipient sees a rendered form with the specified fields; after they submit
     the conversation resumes with their form data in ``form_data``.
-    Do NOT use this for yes/no decisions (use request_approval) or plain file
-    uploads (use request_files) or notifications (use send_report).
+    Forms may include file-upload components (``"type": "file", "storage":
+    "base64"`` in the schema) alongside other fields — uploaded files are saved
+    to the session's input-files folder automatically and their workspace paths
+    are returned in ``form_data`` (same behaviour as ``request_files``).
+    Do NOT use this for pure yes/no decisions (use request_approval), file-only
+    uploads with no other fields (use request_files), or notifications (use
+    send_report).
 
     IMPORTANT — two-turn confirmation protocol:
     1. Complete any prerequisite work first if applicable.
@@ -208,6 +213,7 @@ def request_form(
         description: Instructions for the form recipient — markdown supported.
         form_schema: Formio.js JSON schema string, e.g.
                      '{"components":[{"type":"textfield","key":"name","label":"Name"}]}'.
+                     File-upload components use ``"type": "file", "storage": "base64"``.
                      Read from a skill helper file via read_file() when available.
         context: JSON string with optional additional key-value context.
     """
