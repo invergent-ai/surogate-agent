@@ -7,9 +7,11 @@ import { ConfirmDialogService } from '../../../../core/services/confirm-dialog.s
 import { SkillsService } from '../../../../core/services/skills.service';
 import { SessionsService } from '../../../../core/services/sessions.service';
 import { ToastService } from '../../../../core/services/toast.service';
+import { ExpertService } from '../../../../core/services/expert.service';
 import {
   FileInfo, SkillListItem, SkillResponse, ValidationResult
 } from '../../../../core/models/skill.models';
+import { Expert } from '../../../../core/models/expert.models';
 import { HumanTask } from '../../../../core/models/task.models';
 import { ValidationBadgeComponent } from '../../../../shared/components/validation-badge/validation-badge.component';
 import { FileListComponent } from '../../../../shared/components/file-list/file-list.component';
@@ -60,9 +62,12 @@ export class SkillsBrowserComponent implements OnInit {
     );
   };
 
+  expertPreview = signal<Expert | null>(null);
+
   private confirmSvc   = inject(ConfirmDialogService);
   private sessionsSvc  = inject(SessionsService);
   private toast        = inject(ToastService);
+  private expertSvc    = inject(ExpertService);
 
   constructor(private skillsService: SkillsService) {}
 
@@ -225,6 +230,26 @@ export class SkillsBrowserComponent implements OnInit {
       },
       error: () => this.toast.error('Could not load form file'),
     });
+  }
+
+  // ── Expert preview ───────────────────────────────────────────────────────────
+
+  openExpertPreview(expertName: string): void {
+    this.expertSvc.list().subscribe({
+      next: (experts) => {
+        const expert = experts.find(e => e.name === expertName);
+        if (expert) {
+          this.expertPreview.set(expert);
+        } else {
+          this.toast.error(`Expert "${expertName}" not found`);
+        }
+      },
+      error: () => this.toast.error('Could not load expert details'),
+    });
+  }
+
+  closeExpertPreview(): void {
+    this.expertPreview.set(null);
   }
 
   /** Load skill detail without emitting skillSelected — used for tab-driven selection to avoid circular events. */
