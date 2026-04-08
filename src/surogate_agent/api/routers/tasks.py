@@ -393,24 +393,86 @@ async def upload_task_files(
 
 
 @router.delete("/{task_id}")
-def cancel_task(
+async def cancel_or_delete_task(
     task_id: str,
     current_user: User = Depends(get_current_user),
     db: DBSession = Depends(get_db),
 ):
-    """Cancel a pending task.  Only the originator may cancel."""
+    """Cancel a pending task or hard-delete a completed/cancelled one.
+
+    - **Pending tasks**: only the originator may cancel.  The LangGraph interrupt
+      is resumed with ``{"cancelled": True}`` so the agent unblocks and the session
+      lock is released normally (inside ``resume_hitl_session``).
+    - **Completed / cancelled tasks**: either the assignee or the originator may
+      hard-delete the row (removes it from both parties' task lists).
+    """
     task = db.query(HumanTask).filter_by(id=task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
+
+    # ── Non-pending: hard delete ───────────────────────────────────────────────
+    if task.status != "pending":
+        if (task.assigned_user_id != current_user.username
+                and task.origin_user_id != current_user.username):
+            raise HTTPException(status_code=403, detail="Not authorised to delete this task")
+        db.delete(task)
+        db.commit()
+        log.info("task %s deleted by %r (status was %r)", task_id, current_user.username, task.status)
+        return {"ok": True}
+
+    # ── Pending: cancel (originator only) ─────────────────────────────────────
     if task.origin_user_id != current_user.username:
         raise HTTPException(status_code=403, detail="Only the task originator may cancel it")
-    if task.status != "pending":
-        raise HTTPException(status_code=409, detail=f"Task is already {task.status}")
 
-    task.status = "cancelled"
+    # Check whether the session is currently locked waiting for this task.
     lock = db.query(SessionLock).filter_by(session_id=task.origin_session_id).first()
+    has_lock = lock is not None and lock.task_id == task_id
+
+    # Capture plain strings before the DB session is closed.
+    origin_session_id = task.origin_session_id
+    origin_user_id = task.origin_user_id
+    context_json = task.context_json
+
+    response: dict = {"cancelled": True}
+    task.status = "cancelled"
+    task.response_json = json.dumps(response)
+    task.responded_at = datetime.utcnow()
+    # Release the lock immediately so the frontend detects the unlock right away.
+    # resume_hitl_session (scheduled below) will gracefully unblock LangGraph;
+    # its _release_session_lock call is a no-op if the lock is already gone.
     if lock and lock.task_id == task_id:
         db.delete(lock)
     db.commit()
-    log.info("task %s cancelled by originator %r", task_id, current_user.username)
+    log.info("task %s cancelled by originator %r (has_lock=%s)", task_id, current_user.username, has_lock)
+
+    from surogate_agent.hitl.resume import (
+        _append_assistant_message,
+        resume_hitl_session,
+    )
+
+    # Always write the cancellation message to history so the originator sees it
+    # when the session reloads (whether or not the session was locked).
+    _append_assistant_message(
+        origin_session_id,
+        origin_user_id,
+        "**Task cancelled.**\n\nThis task was cancelled before the assignee could respond.",
+        block_type="hitl_response",
+    )
+
+    if has_lock:
+        # Resume the paused LangGraph interrupt with a cancellation signal so the
+        # agent unblocks gracefully.
+        try:
+            asyncio.create_task(resume_hitl_session(
+                origin_session_id=origin_session_id,
+                origin_user_id=origin_user_id,
+                context_json=context_json,
+                response=response,
+            ))
+        except Exception as exc:
+            log.warning(
+                "could not schedule HITL resume for cancelled task %s: %s",
+                task_id, exc,
+            )
+
     return {"ok": True}

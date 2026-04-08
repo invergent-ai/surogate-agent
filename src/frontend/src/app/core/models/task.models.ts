@@ -16,6 +16,9 @@ export interface TaskResponse {
   decision?: 'approved' | 'rejected';
   acknowledged?: boolean;
   feedback?: string;
+  cancelled?: boolean;
+  form_data?: Record<string, unknown>;
+  files?: string[];
 }
 
 export interface TaskRespondPayload {

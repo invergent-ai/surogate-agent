@@ -265,7 +265,7 @@
                border-l border-gray-200 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-900
                absolute top-0 bottom-0 right-0 z-40 shadow-xl
                lg:static lg:shadow-none"
-        style="width: 20rem"
+        [style.width]="rightPanelWidth()"
       >
         <!-- Panel header -->
         <div class="flex-none flex items-center gap-1.5 px-2 py-2 border-b border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900">
@@ -284,9 +284,32 @@
               {{ taskSvc.pendingCount() }}
             </span>
           }
+          <div class="flex gap-1">
+            @if (bp.isMobile()) {
+              @for (snap of MOBILE_SNAPS; track snap.value) {
+                <button
+                  (click)="rightPanelWidth.set(snap.value)"
+                  class="text-xs px-2 py-0.5 rounded transition-colors"
+                  [ngClass]="rightPanelWidth() === snap.value
+                    ? 'bg-brand text-zinc-900 font-semibold'
+                    : 'bg-gray-100 dark:bg-zinc-800 text-gray-600 dark:text-zinc-400 hover:bg-gray-200 dark:hover:bg-zinc-700'"
+                >{{ snap.label }}</button>
+              }
+            } @else {
+              @for (snap of DESKTOP_SNAPS_RIGHT; track snap.value) {
+                <button
+                  (click)="rightPanelWidth.set(snap.value)"
+                  class="text-xs px-2 py-0.5 rounded transition-colors"
+                  [ngClass]="rightPanelWidth() === snap.value
+                    ? 'bg-brand text-zinc-900 font-semibold'
+                    : 'bg-gray-100 dark:bg-zinc-800 text-gray-600 dark:text-zinc-400 hover:bg-gray-200 dark:hover:bg-zinc-700'"
+                >{{ snap.label }}</button>
+              }
+            }
+          </div>
         </div>
         <div class="flex-1 min-h-0 overflow-hidden">
-          <app-task-list (taskSelected)="onTaskSelected($event)" />
+          <app-task-list (taskSelected)="onTaskSelected($event)" (taskRevoked)="onTaskRevoked()" />
         </div>
       </aside>
     }

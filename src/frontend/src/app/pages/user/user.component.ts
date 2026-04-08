@@ -1,6 +1,6 @@
 import {
   Component, ViewChild, ViewChildren, QueryList,
-  inject, signal, computed, OnInit, AfterViewInit, OnDestroy, HostListener
+  inject, signal, computed, effect, OnInit, AfterViewInit, OnDestroy, HostListener
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
@@ -59,6 +59,11 @@ const MOBILE_SNAPS = [
   { value: '100vw', label: '100%' },
 ] as const;
 
+const DESKTOP_SNAPS_RIGHT = [
+  { value: '20rem', label: 'Default' },
+  { value: '50vw',  label: 'Wide' },
+] as const;
+
 // ── Component ────────────────────────────────────────────────────────────────
 @Component({
   selector: 'app-user',
@@ -78,9 +83,11 @@ export class UserComponent implements OnInit, AfterViewInit, OnDestroy {
   @ViewChild(ChatComponent) chatComp!: ChatComponent;
   @ViewChildren(FileListComponent) private _fileLists!: QueryList<FileListComponent>;
 
-  readonly DESKTOP_SNAPS = DESKTOP_SNAPS;
-  readonly MOBILE_SNAPS  = MOBILE_SNAPS;
-  readonly LEFT_DEFAULT  = '18rem';
+  readonly DESKTOP_SNAPS       = DESKTOP_SNAPS;
+  readonly MOBILE_SNAPS        = MOBILE_SNAPS;
+  readonly DESKTOP_SNAPS_RIGHT = DESKTOP_SNAPS_RIGHT;
+  readonly LEFT_DEFAULT        = '18rem';
+  readonly RIGHT_DEFAULT       = '20rem';
 
   sessions       = signal<SessionMeta[]>([]);
   sessionId      = signal<string>('');
@@ -95,8 +102,9 @@ export class UserComponent implements OnInit, AfterViewInit, OnDestroy {
   private _dragStartY = 0;
   private _dragStartH = 0;
 
-  leftPanelWidth  = signal<string>('18rem');
-  rightPanelOpen  = signal<boolean>(false);
+  leftPanelWidth   = signal<string>('18rem');
+  rightPanelOpen   = signal<boolean>(false);
+  rightPanelWidth  = signal<string>('20rem');
 
   /** HITL session lock state. */
   sessionLocked  = signal(false);
@@ -118,8 +126,22 @@ export class UserComponent implements OnInit, AfterViewInit, OnDestroy {
     private router: Router,
     readonly settings: SettingsService,
   ) {
+    // Start closed on mobile, open on desktop.
     if (this.bp.isMobile()) this.leftPanelWidth.set('0px');
+
     this.settings.loadSettings().subscribe();
+
+    // On breakpoint change: close all panels on mobile, restore left on desktop.
+    // Right panel stays closed on desktop (user-mode default).
+    // Only reads bp.isMobile() so manual toggles don't re-trigger.
+    effect(() => {
+      if (this.bp.isMobile()) {
+        this.leftPanelWidth.set('0px');
+        this.rightPanelOpen.set(false);
+      } else {
+        this.leftPanelWidth.set(this.LEFT_DEFAULT);
+      }
+    });
   }
 
   ngOnInit() {
@@ -237,7 +259,14 @@ export class UserComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   toggleRightPanel() {
-    this.rightPanelOpen.update(v => !v);
+    const opening = !this.rightPanelOpen();
+    this.rightPanelOpen.set(opening);
+    if (opening && this.bp.isMobile()) this.rightPanelWidth.set('50vw');
+  }
+
+  private _openRightPanel() {
+    this._openRightPanel();
+    if (this.bp.isMobile()) this.rightPanelWidth.set('50vw');
   }
 
   // ── HITL session lock ───────────────────────────────────────────────────────
@@ -245,6 +274,7 @@ export class UserComponent implements OnInit, AfterViewInit, OnDestroy {
   onSessionLocked(event: { taskId: string }) {
     this.sessionLocked.set(true);
     this.lockTaskId.set(event.taskId);
+    this.taskSvc.refresh();
     this.taskSvc.getTask(event.taskId).subscribe({
       next: t => {
         this.lockTaskType.set(t.taskType);
@@ -252,12 +282,11 @@ export class UserComponent implements OnInit, AfterViewInit, OnDestroy {
         // task detail panel in the chat so they can respond immediately.
         if (t.assignedTo === this.userId) {
           this.selectedTask.set(t);
-          this.taskSvc.refresh();
         }
       },
       error: () => {},
     });
-    this.rightPanelOpen.set(true);
+    this._openRightPanel();
     this._startLockPolling();
   }
 
@@ -275,9 +304,13 @@ export class UserComponent implements OnInit, AfterViewInit, OnDestroy {
     this._refreshFiles();
   }
 
+  onTaskRevoked() {
+    this._checkLock();
+  }
+
   private _startLockPolling() {
     this._stopLockPolling();
-    this._lockPollTimer = setInterval(() => this._checkLock(), 1000);
+    this._lockPollTimer = setInterval(() => this._checkLock(), 200);
   }
 
   private _stopLockPolling() {
@@ -388,7 +421,7 @@ export class UserComponent implements OnInit, AfterViewInit, OnDestroy {
           this.lockTaskId.set(lock.task_id);
           this.lockTaskType.set(lock.task_type);
           this._startLockPolling();
-          this.rightPanelOpen.set(true);
+          this._openRightPanel();
           // If the locked task is assigned to the current user (self-send),
           // auto-open the task detail panel so they can respond immediately.
           this.taskSvc.getTask(lock.task_id).subscribe({
