@@ -1,5 +1,27 @@
 # Changelog
 
+## [4.0.0](https://github.com/invergent-ai/surogate-agent/compare/v3.1.0...v4.0.0) (2026-04-08)
+
+
+### ⚠ BREAKING CHANGES
+
+* Human in the loop support (HITL)
+
+### Features
+
+* Human in the loop support (HITL) ([39e8935](https://github.com/invergent-ai/surogate-agent/commit/39e893524695c3a858822cc5f8a0bf37b83c00ec))
+* HumanTask with dynamic forms & form-developer built-in skill (formiojs) ([d0f5ae5](https://github.com/invergent-ai/surogate-agent/commit/d0f5ae51c748516c8273244e5cd31306e332d54a))
+
+
+### Bug Fixes
+
+* clear messages on skill close ([cc4f412](https://github.com/invergent-ai/surogate-agent/commit/cc4f4125190ebfb5b6c51f2f37f61fbd1b32b899))
+* expert details in skill-browser ([cd9ddd5](https://github.com/invergent-ai/surogate-agent/commit/cd9ddd57515231907008faea3956ef8ccaeb99b7))
+* more practical tasklist ([1039069](https://github.com/invergent-ai/surogate-agent/commit/10390693fe5aab60e2f76c0249e72fd68c7a3b22))
+* race conditions & ui fixes in hitl ([25d2242](https://github.com/invergent-ai/surogate-agent/commit/25d2242f0ff0f9a1aebe564d8eeca536fea21097))
+* support for file uploads in dynamic hitl forms ([072dc88](https://github.com/invergent-ai/surogate-agent/commit/072dc88f4904c00e2d17c04e10cec5a98313ebd1))
+* use experts on resume from hitl ([c5ae764](https://github.com/invergent-ai/surogate-agent/commit/c5ae764edaf51949ec9ecb6631c0bd11d2705b93))
+
 ## [3.1.0](https://github.com/invergent-ai/surogate-agent/compare/v3.0.0...v3.1.0) (2026-03-22)
 
 
