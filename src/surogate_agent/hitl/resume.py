@@ -5,6 +5,7 @@ Called as a background asyncio task from the tasks router.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
 from datetime import datetime
@@ -12,6 +13,18 @@ from datetime import datetime
 from surogate_agent.core.logging import get_logger
 
 log = get_logger(__name__)
+
+# Per-user asyncio queues for ``session_resumed`` notifications.
+# The tasks notifications SSE endpoint subscribes to these so the frontend
+# knows when to reload history after the agent continuation is written.
+_resume_notify_queues: dict[str, asyncio.Queue] = {}
+
+
+def get_resume_notify_queue(user_id: str) -> asyncio.Queue:
+    """Return (creating if needed) the notification queue for *user_id*."""
+    if user_id not in _resume_notify_queues:
+        _resume_notify_queues[user_id] = asyncio.Queue()
+    return _resume_notify_queues[user_id]
 
 
 def _collect_ai_text(msg, seen_ids: set, text_parts: list) -> None:
@@ -261,9 +274,18 @@ async def resume_hitl_session(
             "failed to resume HITL checkpoint for session %s: %s",
             origin_session_id, exc, exc_info=True,
         )
+    else:
+        # Success path: notify the frontend that the agent continuation is ready.
+        # The notifications SSE endpoint polls this queue and emits session_resumed.
+        try:
+            q = get_resume_notify_queue(origin_user_id)
+            q.put_nowait({"session_id": origin_session_id})
+        except Exception:
+            pass
     finally:
         # Always release the lock — even on error — so the session never stays
-        # locked forever.  The frontend detects this and reloads history.
+        # locked forever.  (Lock is already released by the tasks router, so this
+        # is a no-op in the normal flow; it's a safety net for edge cases.)
         _release_session_lock(origin_session_id)
 
 
@@ -501,7 +523,7 @@ def _format_task_response_text(task_type: str, response: dict) -> str:
         if files:
             text += "\n\n" + "\n".join(f"- `{f}`" for f in files)
     elif task_type == "form_input":
-        form_data = response.get("form_data", {})
+        form_data = {k: v for k, v in (response.get("form_data", {}) or {}).items() if k != "submit"}
         text = "**Form submitted.**"
         if form_data:
             text += "\n\n" + "\n".join(f"- **{k}**: {v}" for k, v in form_data.items())

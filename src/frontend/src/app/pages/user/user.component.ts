@@ -144,13 +144,25 @@ export class UserComponent implements OnInit, AfterViewInit, OnDestroy {
     });
   }
 
+  private _resumeSub: import('rxjs').Subscription | null = null;
+
   ngOnInit() {
     this.taskSvc.startNotifications();
+    // Reload history when the agent continuation is ready after a HITL resume.
+    // Guard: if the session is still locked (another task pending on the same
+    // session), this event is stale — skip it to avoid resetting selectedTask.
+    this._resumeSub = this.taskSvc.sessionResumed$.subscribe(sessionId => {
+      if (sessionId !== this.sessionId()) return;
+      if (this.sessionLocked()) return;
+      const meta = this.sessions().find(s => s.sessionId === sessionId);
+      if (meta) this._activateSession(meta, true);
+    });
   }
 
   ngOnDestroy() {
     this.taskSvc.stopNotifications();
     this._stopLockPolling();
+    this._resumeSub?.unsubscribe();
   }
 
   ngAfterViewInit() {
@@ -265,7 +277,7 @@ export class UserComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   private _openRightPanel() {
-    this._openRightPanel();
+    this.rightPanelOpen.set(true);
     if (this.bp.isMobile()) this.rightPanelWidth.set('50vw');
   }
 
@@ -302,6 +314,7 @@ export class UserComponent implements OnInit, AfterViewInit, OnDestroy {
     this.selectedTask.set(null);
     this.taskSvc.refresh();
     this._refreshFiles();
+    this._checkLock();
   }
 
   onTaskRevoked() {
@@ -422,12 +435,23 @@ export class UserComponent implements OnInit, AfterViewInit, OnDestroy {
           this.lockTaskType.set(lock.task_type);
           this._startLockPolling();
           this._openRightPanel();
-          // If the locked task is assigned to the current user (self-send),
-          // auto-open the task detail panel so they can respond immediately.
-          this.taskSvc.getTask(lock.task_id).subscribe({
-            next: t => { if (t.assignedTo === this.userId) this.selectedTask.set(t); },
-            error: () => {},
-          });
+          // Auto-open the task detail panel when the locked task is assigned to
+          // the current user (self-send).  Try the cached task list first so the
+          // panel opens synchronously (no extra HTTP round-trip); fall back to a
+          // direct getTask fetch if the cache doesn't have it yet.
+          const cached = this.taskSvc.assignedTasks().find(
+            t => t.id === lock.task_id && t.status === 'pending'
+          );
+          if (cached) {
+            this.selectedTask.set(cached);
+          } else {
+            this.taskSvc.getTask(lock.task_id).subscribe({
+              next: t => { if (t.assignedTo === this.userId) this.selectedTask.set(t); },
+              error: () => {},
+            });
+          }
+          // Keep task list current
+          this.taskSvc.refresh();
         }
       });
     }

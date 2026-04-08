@@ -24,17 +24,6 @@ import { parseSegs, Seg } from './task-file-refs';
         </div>
       }
 
-      @if (ctxEntries.length > 0) {
-        <div class="bg-gray-50 dark:bg-zinc-800 rounded-lg p-3 flex flex-col gap-2">
-          @for (entry of ctxEntries; track entry.key) {
-            <div class="flex flex-col gap-1 text-xs">
-              <span class="font-medium text-gray-500 dark:text-zinc-400">{{ entry.key }}</span>
-              <span class="text-gray-700 dark:text-zinc-300">{{ entry.value }}</span>
-            </div>
-          }
-        </div>
-      }
-
       <!-- Drop zone / file picker -->
       <div
         [ngClass]="isDragging()

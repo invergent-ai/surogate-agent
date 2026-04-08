@@ -67,39 +67,6 @@ import { parseSegs, fileSegOf, Seg, FileSeg } from './task-file-refs';
         }
       }
 
-      @if (ctxEntries.length > 0) {
-        <div class="bg-gray-50 dark:bg-zinc-800 rounded-lg p-3 flex flex-col gap-2">
-          @for (entry of ctxEntries; track entry.key) {
-            <div class="flex flex-col gap-1 text-xs">
-              <span class="font-medium text-gray-500 dark:text-zinc-400">{{ entry.key }}</span>
-              @if (entry.seg) {
-                <div class="flex flex-col gap-1.5">
-                  @if (entry.seg.isImage && imageUrls()[entry.seg.fullPath]) {
-                    <img [src]="imageUrls()[entry.seg.fullPath]"
-                         class="max-h-40 rounded object-contain border border-gray-200 dark:border-zinc-700 cursor-pointer"
-                         (click)="preview(entry.seg)"
-                         [alt]="entry.seg.basename" />
-                  }
-                  <div class="flex items-center gap-2">
-                    <svg class="w-3 h-3 text-gray-400 flex-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/>
-                    </svg>
-                    <span class="font-medium text-gray-600 dark:text-zinc-300 truncate" [title]="entry.seg.filePath">{{ entry.seg.basename }}</span>
-                    @if (entry.seg.isImage) {
-                      <button (click)="preview(entry.seg)" class="text-brand hover:underline">preview</button>
-                      <span class="text-gray-300 dark:text-zinc-600">·</span>
-                    }
-                    <button (click)="download(entry.seg)" class="text-gray-500 dark:text-zinc-400 hover:underline">download</button>
-                  </div>
-                </div>
-              } @else {
-                <span class="text-gray-700 dark:text-zinc-300">{{ entry.value }}</span>
-              }
-            </div>
-          }
-        </div>
-      }
-
       <textarea
         [(ngModel)]="feedback"
         placeholder="Optional feedback…"

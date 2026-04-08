@@ -29,6 +29,18 @@ except ImportError:
 
 log = get_logger(__name__)
 
+# Keep strong references to background asyncio tasks so GC doesn't cancel them
+# before they complete.  add_done_callback removes the entry automatically.
+_background_tasks: set[asyncio.Task] = set()
+
+
+def _create_background_task(coro) -> asyncio.Task:
+    """Schedule *coro* as a background asyncio task, keeping a strong reference."""
+    task = asyncio.create_task(coro)
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+    return task
+
 
 def _save_form_files(form_data: dict, session_id: str, db: DBSession) -> dict:
     """Detect formio.js file-upload fields in *form_data*, save them to the
@@ -165,6 +177,7 @@ async def task_notifications(
         )
 
     async def _event_gen():
+        from surogate_agent.hitl.resume import get_resume_notify_queue
         seen: set[str] = set()
         # Pre-seed with existing pending tasks so reconnecting clients don't
         # get flooded with stale notifications.
@@ -175,6 +188,8 @@ async def task_notifications(
             ).all()
             for t in existing:
                 seen.add(t.id)
+
+        resume_queue = get_resume_notify_queue(current_user.username)
 
         while True:
             if await request.is_disconnected():
@@ -196,6 +211,16 @@ async def task_notifications(
                             "assigned_by": task.origin_user_id,
                         }),
                     }
+            # Drain any session_resumed notifications queued by resume_hitl_session
+            while not resume_queue.empty():
+                try:
+                    ev = resume_queue.get_nowait()
+                    yield {
+                        "event": "session_resumed",
+                        "data": json.dumps({"session_id": ev["session_id"]}),
+                    }
+                except asyncio.QueueEmpty:
+                    break
             await asyncio.sleep(0.5)
 
     return EventSourceResponse(_event_gen())
@@ -284,12 +309,15 @@ async def respond_to_task(
     )
     _append_task_response_to_history(origin_session_id, origin_user_id, task_type, response)
 
-    # Schedule the LangGraph resume.  The lock is released INSIDE
-    # resume_hitl_session after the agent finishes, so the frontend's
-    # history-reload on unlock sees both the task-response message and the
-    # agent's continuation output in a single reload.
+    # Release the lock now so the frontend detects the unlock immediately.
+    # resume_hitl_session (scheduled below) runs the LLM continuation and writes
+    # it to history; its own _release_session_lock call is a no-op at that point.
+    _release_session_lock(origin_session_id)
+
+    # Schedule the LangGraph resume as a background task.  A strong reference is
+    # kept in _background_tasks so GC cannot cancel it before it completes.
     try:
-        asyncio.create_task(resume_hitl_session(
+        _create_background_task(resume_hitl_session(
             origin_session_id=origin_session_id,
             origin_user_id=origin_user_id,
             context_json=context_json,
@@ -297,9 +325,6 @@ async def respond_to_task(
         ))
     except Exception as exc:
         log.warning("could not schedule HITL checkpoint resume for task %s: %s", task_id, exc)
-        # If we can't schedule the resume, release the lock immediately so the
-        # session doesn't stay locked forever.
-        _release_session_lock(origin_session_id)
 
     return {"ok": True}
 
@@ -376,10 +401,12 @@ async def upload_task_files(
     )
     _append_task_response_to_history(origin_session_id, origin_user_id, task_type, response)
 
-    # Schedule LangGraph resume; lock is released INSIDE resume_hitl_session
-    # after the agent finishes, so the frontend sees the full continuation.
+    # Release the lock now so the frontend detects the unlock immediately.
+    _release_session_lock(origin_session_id)
+
+    # Schedule LangGraph resume with a strong reference so GC cannot cancel it.
     try:
-        asyncio.create_task(resume_hitl_session(
+        _create_background_task(resume_hitl_session(
             origin_session_id=origin_session_id,
             origin_user_id=origin_user_id,
             context_json=context_json,
@@ -387,7 +414,6 @@ async def upload_task_files(
         ))
     except Exception as exc:
         log.warning("could not schedule HITL checkpoint resume for task %s: %s", task_id, exc)
-        _release_session_lock(origin_session_id)
 
     return {"ok": True, "files": saved_paths}
 
@@ -461,9 +487,9 @@ async def cancel_or_delete_task(
 
     if has_lock:
         # Resume the paused LangGraph interrupt with a cancellation signal so the
-        # agent unblocks gracefully.
+        # agent unblocks gracefully.  Strong reference prevents GC from cancelling.
         try:
-            asyncio.create_task(resume_hitl_session(
+            _create_background_task(resume_hitl_session(
                 origin_session_id=origin_session_id,
                 origin_user_id=origin_user_id,
                 context_json=context_json,

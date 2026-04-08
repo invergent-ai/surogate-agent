@@ -1,6 +1,6 @@
 import { Injectable, OnDestroy, inject, signal, computed } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable, map, catchError, of } from 'rxjs';
+import { Observable, Subject, map, catchError, of } from 'rxjs';
 import { ApiConfigService } from './api-config.service';
 import { AuthService } from './auth.service';
 import { HumanTask, HumanTaskRaw, TaskRespondPayload, mapTask } from '../models/task.models';
@@ -21,6 +21,9 @@ export class TaskService implements OnDestroy {
   pendingCount = computed(() =>
     this.assignedTasks().filter(t => t.status === 'pending').length
   );
+
+  /** Emits session_ids when the backend reports agent continuation is ready. */
+  readonly sessionResumed$ = new Subject<string>();
 
   private _notifController: AbortController | null = null;
   private _pollTimer: ReturnType<typeof setTimeout> | null = null;
@@ -108,10 +111,23 @@ export class TaskService implements OnDestroy {
           if (done || signal.aborted) break;
           const text = decoder.decode(value, { stream: true });
           // Parse SSE lines
-          for (const line of text.split('\n')) {
+          const lines = text.split('\n');
+          for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
             if (line.startsWith('event: new_task')) {
               // Refresh task list on any new task notification
               this.refresh();
+            } else if (line.startsWith('event: session_resumed')) {
+              // Find the data line immediately following
+              const dataLine = lines[i + 1] ?? '';
+              if (dataLine.startsWith('data:')) {
+                try {
+                  const payload = JSON.parse(dataLine.slice(5).trim());
+                  if (payload.session_id) {
+                    this.sessionResumed$.next(payload.session_id);
+                  }
+                } catch { /* ignore parse errors */ }
+              }
             }
           }
         }

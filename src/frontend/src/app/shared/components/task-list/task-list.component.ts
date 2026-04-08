@@ -673,7 +673,7 @@ export class TaskListComponent implements OnInit {
       }
     } else if (task.taskType === 'form_input') {
       const data = r.form_data ?? {};
-      const entries = Object.entries(data);
+      const entries = Object.entries(data).filter(([k]) => k !== 'submit');
       text = '**Form submitted.**';
       if (entries.length) {
         text += '\n\n' + entries.map(([k, v]) => {

@@ -445,7 +445,7 @@ def list_session_files(session_id: str, settings: ServerSettings = Depends(setti
     sm = _session_manager(settings)
     session = sm.get_session(session_id)
     if session is None:
-        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
+        return []  # new session — workspace not created yet, no files
     return _file_infos(session)
 
 
